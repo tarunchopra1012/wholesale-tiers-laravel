@@ -3,9 +3,10 @@
 An embedded Shopify admin app that lets a merchant assign wholesale discount
 tiers to customers by tag and preview the resulting prices.
 
-> **Status: early.** The development environment and the Laravel scaffold are
-> in place and running. None of the Shopify integration is built yet. The
-> roadmap below marks honestly what exists and what doesn't.
+> **Status: early.** The development environment, the Laravel scaffold and the
+> database layer are in place and running. None of the Shopify integration is
+> built yet — no OAuth, no Admin API calls, no UI. The roadmap below marks
+> honestly what exists and what doesn't.
 
 ## The problem it solves
 
@@ -91,19 +92,39 @@ Two tables is the right size. There is deliberately **no `customers` table** —
 customer data lives in Shopify, and caching it creates a sync problem this app
 does not need.
 
+Two details the shorthand above hides. `access_token` is a `text` column, not
+`varchar(255)` — the `encrypted` cast stores a base64'd envelope of iv,
+ciphertext and MAC, which takes a 38-character Shopify token to 256
+characters, one past the limit. And `discount_type` casts to a `DiscountType`
+enum rather than a bare string, so `TierCalculator` will match on cases
+instead of string literals.
+
 ## Running it locally
 
 Requires Docker Desktop. Nothing else — no PHP, Node or MySQL on your machine.
+
+`.env` is not committed, so copy the example first:
+
+```bash
+cp .env.example .env
+```
+
+Its blank `DB_*` values are fine — compose passes the real ones into the
+container. Then bring the stack up:
 
 ```bash
 docker compose up -d --build
 ```
 
-Then create the tables:
+Generate the app key and create the tables:
 
 ```bash
-docker compose exec app php artisan migrate
+docker compose exec app php artisan key:generate
+docker compose exec app php artisan migrate --seed
 ```
+
+`--seed` is optional. It gives you one development shop with two tiers,
+`wholesale-gold` at 20% off and `wholesale-silver` at 10% off.
 
 | Service      | URL / Port              |
 | ------------ | ----------------------- |
@@ -129,6 +150,10 @@ diagnose:
   Compose passes `DB_*` in as real environment variables, and Laravel's dotenv
   loader never overwrites a variable that already exists in the environment.
   Both files are kept in sync so this can't surprise you.
+- **`APP_KEY` has to exist before anything writes a shop row.**
+  `shops.access_token` uses Laravel's `encrypted` cast, so a missing key fails
+  with `No application encryption key has been specified` — at seed time
+  rather than at migrate time, which makes it look like a seeder bug.
 - **The Vite dev server advertises `localhost`, not `0.0.0.0`.** It binds to
   all interfaces inside the container, but `public/hot` has to contain an
   address a browser can actually reach. `0.0.0.0` is not one, and the symptom
@@ -139,12 +164,13 @@ diagnose:
 Built:
 
 - [x] Dockerised dev environment — php-fpm, nginx, MySQL 8, Vite
-- [x] Laravel 13 scaffold on PHP 8.4, MySQL wired up, migrations running
+- [x] Laravel 13 scaffold on PHP 8.4, MySQL wired up
+- [x] Data layer — `shops` and `tier_settings` migrations, models, factories
+  and a development seeder
 
 Not built yet:
 
 - [ ] OAuth install flow, embedded, with HMAC verification and token exchange
-- [ ] `shops` and `tier_settings` migrations and models
 - [ ] Session-token verification middleware
 - [ ] `ShopifyGraphQLClient` and the first `/api/customers` endpoint
 - [ ] React + Polaris + App Bridge shell
@@ -163,7 +189,7 @@ The exclusions are as considered as the build:
 | Theme app extension                      | A display concern on the storefront, separate from the pricing engine                                                     |
 | Webhooks (`app/uninstalled`, `customers/update`) | Needed for production hygiene — orphaned records on uninstall — but adds infrastructure without changing what the app demonstrates |
 | Billing API, GDPR webhooks, multi-store  | These only matter for public App Store distribution                                                                       |
-| Broad test coverage                      | Only `TierCalculator`, the pure pricing logic, is unit-tested. The rest is not, and this README isn't going to pretend otherwise. |
+| Broad test coverage                      | `TierCalculator`, the pure pricing logic, is the one class that will get unit tests. It isn't written yet, so nothing is covered today — and this README isn't going to pretend otherwise. |
 
 ## License
 
