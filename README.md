@@ -3,10 +3,10 @@
 An embedded Shopify admin app that lets a merchant assign wholesale discount
 tiers to customers by tag and preview the resulting prices.
 
-> **Status: early.** The development environment, the Laravel scaffold and the
-> database layer are in place and running. None of the Shopify integration is
-> built yet — no OAuth, no Admin API calls, no UI. The roadmap below marks
-> honestly what exists and what doesn't.
+> **Status: early.** The development environment, the Laravel scaffold, the
+> database layer and the OAuth install flow are in place. There are no Admin
+> API calls and no UI yet. The roadmap below marks honestly what exists and
+> what doesn't.
 
 ## The problem it solves
 
@@ -79,8 +79,10 @@ Shopify Admin API
 
 ```
 shops
-  id, shop_domain (unique), access_token (encrypted cast), scopes,
-  installed_at, uninstalled_at (nullable), timestamps
+  id, shop_domain (unique), access_token (encrypted cast),
+  access_token_expires_at, refresh_token (encrypted cast),
+  refresh_token_expires_at, scopes, installed_at,
+  uninstalled_at (nullable), timestamps
 
 tier_settings
   id, shop_id (fk, cascade), tag, discount_type enum(percentage,fixed),
@@ -138,6 +140,39 @@ Run artisan inside the container, not on the host:
 docker compose exec app php artisan <command>
 ```
 
+### Installing on a development store
+
+Shopify has to reach the app over HTTPS, so expose it with a tunnel:
+
+```bash
+cloudflared tunnel --url http://localhost:8000
+```
+
+Then:
+
+1. In `.env`, set `SHOPIFY_API_KEY` (the Client ID) and `SHOPIFY_API_SECRET`
+   (the Client secret) from the app's **App settings** page in the Dev
+   Dashboard, and `SHOPIFY_APP_URL` to the tunnel URL.
+2. In the Dev Dashboard, open **Versions → Create version**. Set the App URL
+   to the tunnel URL, add `<tunnel url>/auth/callback` under Allowed
+   redirection URL(s), keep Scopes the same as `SHOPIFY_SCOPES`, and click
+   **Release**. A released version can't be edited; every change is a new
+   version.
+3. Visit `<tunnel url>/auth?shop=<your-store>.myshopify.com` in a normal
+   browser tab — not inside the Shopify admin — and approve the install.
+
+A quick tunnel gets a new URL every time it starts, so steps 1 and 2 repeat
+on every restart.
+
+**If Shopify says `The redirect_uri is not whitelisted` when the URL is
+correct,** look for "dev previews" in the store admin's bottom corner. A
+leftover preview from `shopify app dev` overrides the released version for
+that store. Clear it with:
+
+```bash
+npx @shopify/cli@latest app dev clean --client-id=<client id> --store=<your-store>.myshopify.com
+```
+
 ### Setup notes worth knowing
 
 A few things in this stack are easy to get wrong, and cost real time to
@@ -167,12 +202,14 @@ Built:
 - [x] Laravel 13 scaffold on PHP 8.4, MySQL wired up
 - [x] Data layer — `shops` and `tier_settings` migrations, models, factories
   and a development seeder
+- [x] OAuth install flow — shop-domain check, HMAC and one-time nonce
+  verification, expiring offline token stored encrypted
 
 Not built yet:
 
-- [ ] OAuth install flow, embedded, with HMAC verification and token exchange
 - [ ] Session-token verification middleware
-- [ ] `ShopifyGraphQLClient` and the first `/api/customers` endpoint
+- [ ] `ShopifyGraphQLClient` with token refresh, and the first
+  `/api/customers` endpoint
 - [ ] React + Polaris + App Bridge shell
 - [ ] Customers page — `IndexTable` with tier badges and filtering
 - [ ] Settings page — discount percentage per tier

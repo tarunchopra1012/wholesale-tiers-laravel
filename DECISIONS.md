@@ -127,3 +127,98 @@ actually asks for at install time.
 **Still open:** these values are already public in `docker-compose.yml`, so
 blanking them in the example protects nothing, and a fresh clone cannot copy
 the example into a working `.env`. Left blank for now.
+
+---
+
+## 21 Sep 2026 — OAuth install
+
+### Expiring offline tokens, not non-expiring
+
+Install sends `expiring=1` on the token exchange. Shopify's current docs say
+new public apps can no longer use non-expiring offline tokens for GraphQL Admin
+API calls, and existing public apps lose them on 1 January 2027. Custom apps
+are exempt, but the distribution choice for this app isn't final, and the
+expiring shape works either way.
+
+What it costs: the access token lives one hour, with a 90-day refresh token.
+`shops` gains `access_token_expires_at`, `refresh_token` (encrypted, `text`
+for the same envelope reason as `access_token`) and `refresh_token_expires_at`.
+All three are nullable, and null means "does not expire" — Shopify only
+returns them when it issued an expiring token.
+
+**Consequence carried forward:** install only stores the refresh token.
+`ShopifyGraphQLClient` has to refresh before calls, or every call fails an
+hour after install.
+
+Also from the docs: offline tokens begin `shpat_` whichever grant produced
+them, and refresh tokens begin `shprt_`.
+
+### Redirect-based install, not Shopify-managed install
+
+Shopify now recommends managed install plus token exchange for embedded apps,
+which skips the redirect entirely. The authorization code grant still works,
+and building it by hand shows the moving parts: nonce, HMAC, code exchange.
+
+**Trade-off accepted:** the nonce lives in the session cookie, so an install
+has to start in a normal browser tab. Inside the admin iframe the browser
+treats that cookie as third-party and blocks it.
+
+### The shop-domain regex ends in `\z`, not `$`
+
+In PHP, `$` also matches just before a trailing newline, so
+`shop.myshopify.com\n` passes a `$`-anchored pattern. `\z` is the true end of
+the string. `ShopDomain` also doesn't trim, for the same reason: trimming
+would quietly accept exactly that input.
+
+### No Form Requests on the OAuth routes
+
+CLAUDE.md asks for Form Requests for validation. That rule is written for the
+JSON API. `/auth` and `/auth/callback` are browser redirects, and a failed
+Form Request redirects "back" — meaningless halfway through OAuth. They answer
+a plain 400 or 403 instead.
+
+### The OAuth callback skips input trimming and empty-to-null
+
+Laravel's global `TrimStrings` and `ConvertEmptyStringsToNull` rewrite query
+parameters, not just form fields. Shopify's HMAC covers the parameters exactly
+as sent, so any rewrite makes a genuine callback fail verification. Both are
+skipped for `auth/callback` only.
+
+**Partly confirmed:** a real callback from the dev store passed verification
+on 21 Sep 2026. That proves the sort order, the `key=value&` format and the
+secret. It does not prove the encoding: the signed message is built with
+`http_build_query`, the URL-encoded form, but no value in that callback
+needed encoding. `host` arrived as plain base64 with no `=`, `+` or `/`.
+Base64 can contain all three, so a shop whose `host` does is still the
+untested case.
+
+### Troubleshooting: a leftover dev preview overrides every released version
+
+Install failed with Shopify's `The redirect_uri is not whitelisted`, even
+though the Dev Dashboard's active version listed the exact callback URL and
+the Client ID matched. Two more releases changed nothing.
+
+The cause was a dev preview attached to the dev store — the store admin showed
+"dev previews (1)" in the bottom corner. `shopify app dev` creates one: a
+temporary copy of the app's settings, usually pointing at an old tunnel, that
+the store uses instead of the active version. Shopify's CLI docs say the
+clean-up command "restores the app's active version to the selected
+development store".
+
+**Fix:** `npx @shopify/cli@latest app dev clean --client-id=<id>
+--store=<store>.myshopify.com`. Install worked on the next try.
+
+**Lesson:** if dashboard changes have no effect on one store, check for a dev
+preview before changing anything else. And don't run `shopify app dev` against
+this app — it recreates the preview.
+
+### "Use legacy install flow" is on — untested whether it's needed
+
+It was ticked while chasing the error above, before the real cause was found.
+Shopify's docs describe the legacy flow as the one that "requests scopes
+through a URL parameter during the OAuth flow", which is what this code does,
+so it is the setting that matches. But install was never tried with it off
+after the dev preview was cleared.
+
+**Still open:** untick it in a new version, reinstall, and record the result
+here.
