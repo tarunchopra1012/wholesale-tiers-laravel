@@ -2,7 +2,10 @@
 
 namespace App\Providers;
 
+use App\Services\Shopify\OAuthHmacVerifier;
+use App\Services\Shopify\OAuthService;
 use Illuminate\Support\ServiceProvider;
+use RuntimeException;
 
 class AppServiceProvider extends ServiceProvider
 {
@@ -11,7 +14,18 @@ class AppServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
-        //
+        // Closures, so config is read only when these are first needed: a
+        // missing credential breaks /auth, not every page.
+        $this->app->bind(OAuthHmacVerifier::class, fn (): OAuthHmacVerifier => new OAuthHmacVerifier(
+            secret: $this->requiredShopifyConfig('api_secret'),
+        ));
+
+        $this->app->bind(OAuthService::class, fn (): OAuthService => new OAuthService(
+            apiKey: $this->requiredShopifyConfig('api_key'),
+            apiSecret: $this->requiredShopifyConfig('api_secret'),
+            scopes: $this->requiredShopifyConfig('scopes'),
+            appUrl: $this->requiredShopifyConfig('app_url'),
+        ));
     }
 
     /**
@@ -20,5 +34,21 @@ class AppServiceProvider extends ServiceProvider
     public function boot(): void
     {
         //
+    }
+
+    /**
+     * Fail loudly on a missing Shopify setting. Otherwise an empty client ID
+     * shows up as a confusing error page on Shopify's side, and an empty
+     * secret as a "bad HMAC" 403 on ours.
+     */
+    private function requiredShopifyConfig(string $key): string
+    {
+        $value = config("shopify.{$key}");
+
+        if (! is_string($value) || $value === '') {
+            throw new RuntimeException("shopify.{$key} is not set. Add it to .env — see .env.example.");
+        }
+
+        return $value;
     }
 }

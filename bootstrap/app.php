@@ -12,7 +12,13 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
     )
     ->withMiddleware(function (Middleware $middleware): void {
-        //
+        // Shopify signs the OAuth callback's parameters exactly as sent. The
+        // default input clean-up (trim, '' to null) also rewrites query
+        // params, which would change what the HMAC is checked against.
+        $isOAuthCallback = fn (Request $request): bool => $request->is('auth/callback');
+
+        $middleware->trimStrings(except: [$isOAuthCallback]);
+        $middleware->convertEmptyStringsToNull(except: [$isOAuthCallback]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
         $exceptions->shouldRenderJsonWhen(
