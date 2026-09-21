@@ -23,6 +23,9 @@ class ShopFactory extends Factory
         return [
             'shop_domain' => fake()->unique()->domainWord().'.myshopify.com',
             'access_token' => 'shpat_'.Str::lower(Str::random(32)),
+            'access_token_expires_at' => now()->addHour(),
+            'refresh_token' => 'shprt_'.Str::lower(Str::random(32)),
+            'refresh_token_expires_at' => now()->addDays(90),
             'scopes' => 'read_customers,read_products',
             'installed_at' => now(),
             'uninstalled_at' => null,

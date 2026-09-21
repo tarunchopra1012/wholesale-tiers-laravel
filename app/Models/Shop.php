@@ -11,8 +11,17 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
-#[Fillable(['shop_domain', 'access_token', 'scopes', 'installed_at', 'uninstalled_at'])]
-#[Hidden(['access_token'])]
+#[Fillable([
+    'shop_domain',
+    'access_token',
+    'access_token_expires_at',
+    'refresh_token',
+    'refresh_token_expires_at',
+    'scopes',
+    'installed_at',
+    'uninstalled_at',
+])]
+#[Hidden(['access_token', 'refresh_token'])]
 class Shop extends Model
 {
     /** @use HasFactory<ShopFactory> */
@@ -27,6 +36,9 @@ class Shop extends Model
     {
         return [
             'access_token' => 'encrypted',
+            'access_token_expires_at' => 'datetime',
+            'refresh_token' => 'encrypted',
+            'refresh_token_expires_at' => 'datetime',
             'installed_at' => 'datetime',
             'uninstalled_at' => 'datetime',
         ];
