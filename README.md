@@ -5,10 +5,10 @@ tiers to customers by tag and preview the resulting prices.
 
 > **Status: early.** The development environment, the Laravel scaffold, the
 > database layer, the OAuth install flow, session-token verification, the
-> `/api/customers` endpoint and the first page — Customers, in React and
-> Polaris inside the admin — are in place. Settings and Preview are empty
-> placeholders. The roadmap below marks honestly what exists and what
-> doesn't.
+> pricing logic with its unit tests, and all three pages — Customers,
+> Settings and Price preview, in React and Polaris inside the admin — are in
+> place. The prices are a preview only: nothing applies them at checkout yet.
+> The roadmap below marks honestly what exists and what doesn't.
 
 ## The problem it solves
 
@@ -100,8 +100,8 @@ Two details the shorthand above hides. `access_token` is a `text` column, not
 `varchar(255)` — the `encrypted` cast stores a base64'd envelope of iv,
 ciphertext and MAC, which takes a 38-character Shopify token to 256
 characters, one past the limit. And `discount_type` casts to a `DiscountType`
-enum rather than a bare string, so `TierCalculator` will match on cases
-instead of string literals.
+enum rather than a bare string, so `TierCalculator` matches on cases instead
+of string literals.
 
 ## Running it locally
 
@@ -127,8 +127,16 @@ docker compose exec app php artisan key:generate
 docker compose exec app php artisan migrate --seed
 ```
 
-`--seed` is optional. It gives you one development shop with two tiers,
-`wholesale-gold` at 20% off and `wholesale-silver` at 10% off.
+`--seed` is optional. It gives every installed shop two tiers,
+`wholesale-gold` at 20% off and `wholesale-silver` at 10% off — or, before
+any store has installed the app, one stand-in shop to hold them. So after
+installing on a store (below), seed again to give that store its tiers:
+
+```bash
+docker compose exec app php artisan db:seed --class=TierSettingSeeder
+```
+
+It only adds tiers a shop doesn't have, so it's safe to run again.
 
 | Service      | URL / Port              |
 | ------------ | ----------------------- |
@@ -230,12 +238,18 @@ Built:
   Customers, Settings and Preview
 - [x] Customers page — `IndexTable` with name, email, tier badge and location,
   filtered by tier
+- [x] `TierCalculator` — percentage or fixed discount in whole cents, exact
+  decimal arithmetic, never below zero, rounded half-up; unit-tested
+- [x] `GET` and `PUT /api/tiers`, `GET /api/products`, `GET /api/preview`
+- [x] Settings page — a card per tier, percentage or fixed amount, saved in
+  one request, errors shown under the field
+- [x] Price preview — pick a product, see its base price and each tier's price
 
 Not built yet:
 
 - [ ] Pagination on the Customers page — it shows the first 25
-- [ ] Settings page — discount percentage per tier
-- [ ] Price preview — base price against each tier's price
+- [ ] Product search on the Preview page — it lists the first 20 by title
+- [ ] Creating, renaming and deleting tiers — Settings edits the seeded ones
 - [ ] Containerised deployment behind a real HTTPS domain
 
 ## Deliberately out of scope
@@ -248,7 +262,7 @@ The exclusions are as considered as the build:
 | Theme app extension                      | A display concern on the storefront, separate from the pricing engine                                                     |
 | Webhooks (`app/uninstalled`, `customers/update`) | Needed for production hygiene — orphaned records on uninstall — but adds infrastructure without changing what the app demonstrates |
 | Billing API, GDPR webhooks, multi-store  | These only matter for public App Store distribution                                                                       |
-| Broad test coverage                      | Tests cover only the places where a bug would be a security hole or a silent failure: the OAuth HMAC check, session-token verification, the middleware's shop resolution, token refresh and the throttle retry. `TierCalculator` will get unit tests when it exists. Controllers, views and the happy path through Shopify are checked by hand against a development store. |
+| Broad test coverage                      | Tests cover only the places where a bug would be a security hole or a silent failure: the OAuth HMAC check, session-token verification, the middleware's shop resolution, token refresh, the throttle retry, and `TierCalculator` — 0%, 100%, a fixed discount bigger than the price, and rounding at the half cent. Controllers, views and the happy path through Shopify are checked by hand against a development store. |
 
 ## License
 

@@ -579,3 +579,156 @@ and not for a later edit. Nothing looked wrong, because nginx kept serving the
 last good build from `public/build`.
 
 **Fix:** `docker compose restart vite`. The README lists it under setup notes.
+
+---
+
+## 22 Sep 2026 — tier pricing, Settings and Preview
+
+### `calculate()` takes `int` cents, not `Money|int`
+
+The spec asked for `calculate(Money|int $basePriceCents, TierSetting $tier): int`.
+There is no `Money` class in the codebase, and if a Money object came in,
+returning a bare `int` would throw its currency away. So the price is `int`
+cents going in and `int` cents coming out.
+
+**Alternative considered:** a small `Money` value object (cents plus currency).
+Rejected — an extra class that nothing needs yet.
+
+### The final price is rounded, not the discount
+
+`TierCalculator` works the exact price out first and rounds once, half-up to
+the cent. Rounding the discount first gives a different answer only at an
+exact half cent: 150¢ at 33% off is 100.5¢, which becomes 101¢ this way and
+100¢ the other. The rounding test pins it. Switching the mode to half-down
+fails exactly the two half-cent cases — checked by doing it.
+
+### Money arithmetic goes through brick/math, declared directly
+
+No floats anywhere a price is worked out. brick/math does exact decimal
+arithmetic, and it was already installed: Laravel's own `decimal:2` cast uses
+it. It's now listed in `composer.json`, because our code calls it and
+shouldn't rely on another package's dependencies. Same version, 0.19.1.
+
+`TierCalculatorTest` extends plain PHPUnit, not Laravel's `TestCase`, and
+builds each tier with `new TierSetting([...])`. It passing proves the class
+needs no app and no database.
+
+### `discount_value` travels as a string
+
+The API sends `"25.00"`, straight from the cast, rather than a JSON number.
+The browser gets exactly what's stored, and the Settings field shows it
+as-is.
+
+### `PUT /api/tiers` updates tiers by tag; it can't create or delete
+
+The body is `{ "tiers": [{ "tag", "discount_type", "discount_value" }] }`.
+Each tag must be one of the calling shop's own tiers, and must appear once.
+The updates run in one transaction, so a failure can't leave gold saved and
+silver not. The answer is every tier, the same as `GET`.
+
+Creating, renaming and deleting tiers are out of scope. A new tier's tag
+would also need the same character rule as the Customers filter (see the
+`tier` entry above).
+
+### The discount limits depend on the same tier's type
+
+0 to 100 for a percentage, more than 0 for a fixed amount, and at most two
+decimals for both — the cast would otherwise round `12.345` without saying
+so. A flat rule list can't see a sibling field, so `discount_value` uses
+`Rule::forEach`, which passes in the tier it belongs to. The messages are
+worded for the merchant, because they appear under the field.
+
+Checked with `curl` and an ID token signed by hand: 150%, a fixed 0,
+`12.345`, an empty value, an unknown tag, a repeated tag, an unknown type
+and an empty list each got a 422 with the right message, and the database
+didn't change.
+
+### Product queries were run against the dev store first
+
+Not in GraphiQL, but through `ShopifyGraphQLClient` itself, which is the
+same API with the app's real token. Seen:
+
+- A variant's `price` is a decimal string, `"1299.00"`, with no currency.
+  The currency comes from `shop.currencyCode`: `USD`.
+- An ID the shop doesn't have, `gid://shopify/Product/1`, returns
+  `product: null`, not an error. The preview answers 404 for it.
+- 20 products with their first variant cost 23 of the 2000-point budget. The
+  `limit` is capped at 50 anyway; the page only needs a short list.
+
+### A price with a fraction of a cent is refused, not rounded
+
+`ProductQuery` turns `"1299.00"` into `129900`. A price that doesn't fit
+whole cents throws instead. That only happens in a currency with three
+decimals, where cents are the wrong unit, and rounding would quietly
+misprice every product.
+
+### The preview reads the price from Shopify, never from the browser
+
+`/api/preview` takes a product ID and fetches the price itself. A price sent
+by the browser could be anything, and the preview should match the store.
+The ID must look like `gid://shopify/Product/<digits>`, so a malformed one
+gets a 422 without a trip to Shopify.
+
+### The seeded tiers were on the wrong shop
+
+The seeder gave its tiers to `wholesale-tiers-dev.myshopify.com`, a shop it
+made up on 20 Sep. The store that actually installed the app, the next day,
+had none — so Settings would have opened empty. Found by listing both shops'
+tiers before writing any code.
+
+Now the seeder gives both tiers to every installed shop that lacks them, and
+only makes up a shop when there are none. Re-running it after the change gave
+the real store gold at 20% and silver at 10%, and left the made-up shop as it
+was.
+
+### Polaris `Toast` needs a `Frame`
+
+Polaris only renders a Toast inside a `Frame`, so `App.jsx` now wraps the
+routes in one.
+
+**Alternative considered:** App Bridge's `shopify.toast.show()`, which shows
+the toast in the admin itself. Not used, because the spec named Polaris's
+Toast.
+
+### Field errors use the field's own `error` prop
+
+The spec asked for `InlineError`. Polaris fields render one themselves when
+given `error`, and also mark the input invalid for screen readers. A
+separate `InlineError` beside the field would need that wiring by hand.
+`api.js` now keeps Laravel's `errors` object on the thrown error, so each
+message lands under its own field. A 422 about something with no field, such
+as a tag that no longer exists, goes in the banner instead.
+
+### One Save for the page, not one per card
+
+It sends every tier in one `PUT`, which matches the endpoint taking a list.
+
+### Page buttons for moving between pages
+
+Each page has buttons to the other two, through React Router. It wasn't in
+the spec, but the checkpoint needs a way from Settings to Preview.
+
+**Better, not built:** App Bridge's `<ui-nav-menu>`, which puts the links in
+the admin's own sidebar. Not used yet, because how it hands a click to React
+Router hasn't been checked.
+
+### Checkpoint
+
+Seen in Claude's browser pane, not inside the admin: `/` loaded in a frame on
+`localhost:8000`, with each API call given an ID token signed by hand, because
+there was no admin to issue one. In that setup:
+
+- Settings showed the real store's two tiers.
+- 150% showed "A percentage must be between 0 and 100." under the gold
+  field only.
+- 25% saved, the field came back as `25.00`, and the "Tiers saved" toast
+  appeared.
+- Price preview then showed the Ceramic Pour-Over Dripper at $1,299.00, gold
+  at 25% off for $974.25 — $1,039.20 at 20% — and silver at $1,169.10.
+- Picking the Gift Card changed the table to $10.00, $7.50 and $9.00.
+
+A fixed discount was checked with `curl`: silver at 5.00 off made the same
+dripper $1,294.00. Gold and silver were put back to 20% and 10% afterwards.
+
+**Not yet seen:** any of this inside the admin, with a real ID token from App
+Bridge.
