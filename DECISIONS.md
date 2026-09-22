@@ -222,3 +222,92 @@ after the dev preview was cleared.
 
 **Still open:** untick it in a new version, reinstall, and record the result
 here.
+
+---
+
+## 22 Sep 2026 — session-token middleware
+
+### Tests pin the database with `<server>`, not `<env>`
+
+`phpunit.xml` switched tests to SQLite with `<env>` lines. Inside the `app`
+container those did nothing. Compose sets `DB_CONNECTION=mysql` as a real
+environment variable, PHP copies it into `$_SERVER`, and Laravel's env reader
+checks `$_SERVER` before `$_ENV`. PHPUnit's `<env>` only writes `$_ENV` and
+`putenv()` — `force="true"` included — so Laravel kept resolving `mysql`.
+
+Confirmed in the container: overriding the way `<env>` does left
+`config('database.default')` at `mysql`; overriding `$_SERVER` changed it to
+`sqlite`.
+
+It had done no damage only because no test touched the database yet. The
+first `RefreshDatabase` test would have run `migrate:fresh` against
+`wholesale_tiers` and dropped the installed shop along with its tokens.
+
+**Fix:** `<server>` for `DB_CONNECTION` and `DB_DATABASE`, which PHPUnit
+writes straight into `$_SERVER`. Both are needed: with only the driver
+switched, SQLite would open a file called `wholesale_tiers`.
+
+**Guard:** `Tests\TestCase` checks the connection Laravel actually resolved
+before any database trait runs, and stops the run if it isn't in-memory
+SQLite. That also catches a cached config, which ignores `phpunit.xml`
+entirely.
+
+Same family as the 19 Sep entry: Compose's environment beats files that look
+like they configure things.
+
+### JWT checks live in a pure `SessionTokenVerifier`
+
+The middleware needs the database to find the shop, so it can't be
+unit-tested on its own. The token checks don't. They sit in their own class
+with no framework calls, like `OAuthHmacVerifier`, and are unit-tested with
+tokens signed inside the test. The middleware stays thin: read the header,
+call the verifier, look up the shop.
+
+Test secrets are over 32 bytes. php-jwt v7 rejects shorter HS256 keys, and a
+rejected key would make every "token is rejected" test pass for the wrong
+reason — so each of those tests also checks the exception message.
+
+### The shop goes on `$request->attributes`, not `$request->shop`
+
+CLAUDE.md describes the middleware as attaching `$request->shop`. In Laravel
+that magic property is `Request::__get`, which reads the query string and body
+first. On `/api/customers?shop=other-store.myshopify.com` it would return the
+other store — exactly the cross-shop hole that taking the shop from `dest`
+exists to close.
+
+`attributes` is server-side only. A feature test sends a valid token for one
+shop with `?shop=` naming another, and checks the first shop is the one
+resolved.
+
+### `aud` is checked even though the signature already is
+
+Each app has its own secret, so another app's token fails the signature check
+anyway. `aud` is still checked: the signature proves who signed the token,
+`aud` says who it was for, and Shopify lists it as required. Without it,
+correctness would rest on the secret never being used anywhere else.
+
+The verifier also requires `exp` and `nbf` to be present — php-jwt only checks
+them when they exist — and checks that `iss` and `dest` name the same shop,
+which Shopify's docs also require.
+
+### No retry header when the shop isn't installed
+
+Token failures answer 401 with `X-Shopify-Retry-Invalid-Session-Request: 1`,
+which asks App Bridge to fetch a fresh token and retry. When the token is valid
+but the shop has no row, or has uninstalled, the header is left off: a fresh
+token can't fix that, so the retry would fail the same way.
+
+Every 401 has the same body whichever check failed, so a caller learns nothing
+about which one to work around. The reason goes to the log at `info`.
+
+**Still open:** the retry header wasn't on the Shopify docs pages checked for
+this (ID tokens, App Bridge resource fetching). It's sent because it's
+harmless. Whether App Bridge really retries once hasn't been seen yet — check
+the Network tab once the React shell exists.
+
+### Leeway is 5 seconds
+
+`JWT::$leeway` absorbs clock difference between this server and Shopify. The
+token only lives 60 seconds, so a large leeway would noticeably stretch a
+stolen token's life. It's a static, so it applies process-wide; the verifier
+is the only code that decodes JWTs.
