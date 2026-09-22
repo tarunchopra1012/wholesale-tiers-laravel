@@ -15,7 +15,9 @@ use Illuminate\Support\Facades\Route;
 Route::get('/customers', [CustomerController::class, 'index']);
 
 Route::get('/tiers', [TierSettingController::class, 'index']);
+Route::post('/tiers', [TierSettingController::class, 'store']);
 Route::put('/tiers', [TierSettingController::class, 'update']);
+Route::delete('/tiers/{id}', [TierSettingController::class, 'destroy'])->whereNumber('id');
 
 Route::get('/products', [ProductController::class, 'index']);
 

@@ -27,8 +27,9 @@ final class CustomerIndexRequest extends FormRequest
             // only: unchecked, "x OR tag:y" would change what the search
             // matches. It can't reach another shop — the token pins that —
             // but it's still user input going into a query language.
-            // \z rather than $, for the same reason as in ShopDomain.
-            'tier' => ['nullable', 'string', 'max:255', 'regex:/^[A-Za-z0-9_-]+\z/'],
+            // The same pattern a tier's tag must match when it's created or
+            // renamed, so every tier can be filtered on.
+            'tier' => ['nullable', 'string', 'max:255', 'regex:'.TierRules::TAG_PATTERN],
             'after' => ['nullable', 'string', 'max:512'],
         ];
     }

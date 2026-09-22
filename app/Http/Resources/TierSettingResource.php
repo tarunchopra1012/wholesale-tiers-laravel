@@ -19,6 +19,9 @@ final class TierSettingResource extends JsonResource
     public function toArray(Request $request): array
     {
         return [
+            // Needed to rename or delete a tier: the tag can't identify it
+            // once the tag itself can change.
+            'id' => $this->resource->id,
             'tag' => $this->resource->tag,
             'discount_type' => $this->resource->discount_type->value,
             // A string such as "25.00", straight from the decimal:2 cast, so

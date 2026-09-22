@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Http\Requests;
 
-use App\Enums\DiscountType;
 use App\Models\Shop;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
@@ -13,7 +12,7 @@ final class UpdateTierSettingsRequest extends FormRequest
 {
     /**
      * The session-token middleware has already decided which shop is
-     * calling, and the tag rule below only accepts that shop's own tiers.
+     * calling, and the id rule below only accepts that shop's own tiers.
      */
     public function authorize(): bool
     {
@@ -30,48 +29,45 @@ final class UpdateTierSettingsRequest extends FormRequest
 
         return [
             'tiers' => ['required', 'array', 'min:1'],
-            // Existing tiers only: this endpoint changes discounts, it
-            // doesn't create tiers.
-            'tiers.*.tag' => [
+            // Matched by id, not tag, because the tag is one of the things
+            // that can change. Existing tiers only: this endpoint edits,
+            // POST /api/tiers creates.
+            'tiers.*.id' => [
                 'required',
-                'string',
+                'integer',
                 'distinct',
-                Rule::exists('tier_settings', 'tag')->where('shop_id', $shop->id),
+                Rule::exists('tier_settings', 'id')->where('shop_id', $shop->id),
             ],
-            'tiers.*.discount_type' => ['required', Rule::enum(DiscountType::class)],
-            // The limits depend on the same tier's type, which a flat rule
-            // list can't see. forEach hands each tier in as $tier.
-            'tiers.*.discount_value' => Rule::forEach(
+            // Unique against every other tier's tag as it is now, including
+            // the others in this request. So swapping two tags in one save
+            // is refused rather than tripping the unique index halfway
+            // through; it takes two saves.
+            'tiers.*.tag' => Rule::forEach(
                 fn (mixed $value, string $attribute, array $data, mixed $tier): array => [
-                    'required',
-                    'numeric',
-                    // The column holds two decimals, and the cast would
-                    // round 12.345 without saying so.
-                    'decimal:0,2',
-                    ...match (is_array($tier) ? ($tier['discount_type'] ?? null) : null) {
-                        DiscountType::Percentage->value => ['between:0,100'],
-                        // The max is the column's: decimal(10,2).
-                        DiscountType::Fixed->value => ['gt:0', 'max:99999999.99'],
-                        // A missing or unknown type already fails its own rule.
-                        default => [],
-                    },
+                    ...TierRules::tag($shop, self::ownId($tier)),
+                    'distinct:ignore_case',
                 ],
+            ),
+            'tiers.*.discount_type' => TierRules::discountType(),
+            // forEach hands each tier in as $tier, so the limits can follow
+            // that tier's own type.
+            'tiers.*.discount_value' => Rule::forEach(
+                fn (mixed $value, string $attribute, array $data, mixed $tier): array => TierRules::discountValue(
+                    is_array($tier) ? ($tier['discount_type'] ?? null) : null,
+                ),
             ),
         ];
     }
 
     /**
-     * Shown under the field on the Settings page, so they're worded for a
-     * merchant, not a developer.
-     *
      * @return array<string, string>
      */
     public function messages(): array
     {
         return [
-            'tiers.*.discount_value.between' => 'A percentage must be between 0 and 100.',
-            'tiers.*.discount_value.gt' => 'A fixed discount must be more than 0.',
-            'tiers.*.discount_value.decimal' => 'Use at most two decimal places.',
+            ...TierRules::messages('tiers.*.'),
+            // Shown in the page's banner, since no field is wrong.
+            'tiers.*.id.exists' => 'One of these tiers has been deleted, perhaps in another window. Reload the page to see the current tiers.',
         ];
     }
 
@@ -81,9 +77,21 @@ final class UpdateTierSettingsRequest extends FormRequest
     public function attributes(): array
     {
         return [
-            'tiers.*.tag' => 'tier',
+            'tiers.*.id' => 'tier',
+            'tiers.*.tag' => 'tag',
             'tiers.*.discount_type' => 'discount type',
             'tiers.*.discount_value' => 'discount',
         ];
+    }
+
+    /**
+     * The tier's own id, so its current tag doesn't count as taken. Only a
+     * real integer: anything else fails the id rule anyway.
+     */
+    private static function ownId(mixed $tier): ?int
+    {
+        $id = is_array($tier) ? ($tier['id'] ?? null) : null;
+
+        return is_int($id) ? $id : null;
     }
 }
