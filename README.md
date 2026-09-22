@@ -7,8 +7,10 @@ tiers to customers by tag and preview the resulting prices.
 > database layer, the OAuth install flow, session-token verification, the
 > pricing logic with its unit tests, and all three pages — Customers,
 > Settings and Price preview, in React and Polaris inside the admin — are in
-> place. The prices are a preview only: nothing applies them at checkout yet.
-> The roadmap below marks honestly what exists and what doesn't.
+> place. A merchant can create, rename and delete tiers, page through their
+> customers, and price any product Shopify's own picker can find. The prices
+> are a preview only: nothing applies them at checkout yet. The roadmap below
+> marks honestly what exists and what doesn't.
 
 ## The problem it solves
 
@@ -24,8 +26,8 @@ commercial wholesale-pricing apps do.
 What a merchant can do with it:
 
 1. See all customers grouped by wholesale tier
-2. Define what each tier means — `wholesale-gold` is 20% off,
-   `wholesale-silver` is 10% off
+2. Define the tiers — add `wholesale-gold` at 20% off and `wholesale-silver`
+   at 10% off, change either of them, or delete one
 3. Preview the resulting price for any product, per tier
 
 This is not a storefront, a theme, or a headless site. Nobody shopping ever
@@ -136,7 +138,9 @@ installing on a store (below), seed again to give that store its tiers:
 docker compose exec app php artisan db:seed --class=TierSettingSeeder
 ```
 
-It only adds tiers a shop doesn't have, so it's safe to run again.
+It only adds tiers a shop doesn't have, so it's safe to run again. It is a
+convenience, not a requirement: a merchant can add their own tiers on the
+Settings page.
 
 | Service      | URL / Port              |
 | ------------ | ----------------------- |
@@ -214,6 +218,10 @@ diagnose:
   during a branch switch. It logs `Cannot resolve entry module` and never
   rebuilds, while the admin keeps showing the last good build. Fix it with
   `docker compose restart vite`.
+- **Shopify's product picker only exists inside the admin.** The admin draws
+  it, so on `localhost:8000` there is no `window.shopify` and the Preview
+  page's Choose product button answers with a red banner. The prices
+  themselves still work there, because Laravel reads them from Shopify.
 - **Laravel trusts the tunnel's `X-Forwarded-Proto` header.** The tunnel
   reaches nginx over plain HTTP. Without that trust, Laravel writes `http://`
   script links into an `https` page, and Chrome blocks them as mixed content —
@@ -237,19 +245,22 @@ Built:
 - [x] React + Polaris + App Bridge shell, with client-side routes for
   Customers, Settings and Preview
 - [x] Customers page — `IndexTable` with name, email, tier badge and location,
-  filtered by tier
+  filtered by tier, 25 at a time with Next and Previous
 - [x] `TierCalculator` — percentage or fixed discount in whole cents, exact
   decimal arithmetic, never below zero, rounded half-up; unit-tested
-- [x] `GET` and `PUT /api/tiers`, `GET /api/products`, `GET /api/preview`
-- [x] Settings page — a card per tier, percentage or fixed amount, saved in
-  one request, errors shown under the field
-- [x] Price preview — pick a product, see its base price and each tier's price
+- [x] `GET`, `POST`, `PUT` and `DELETE` on `/api/tiers`, plus
+  `GET /api/products` and `GET /api/preview`
+- [x] Settings page — a card per tier, percentage or fixed amount, all saved
+  in one request, errors shown under the field; tiers can be added, renamed
+  and deleted, with the delete confirmed first
+- [x] Price preview — choose any product with Shopify's own picker, see its
+  base price and each tier's price
 
 Not built yet:
 
-- [ ] Pagination on the Customers page — it shows the first 25
-- [ ] Product search on the Preview page — it lists the first 20 by title
-- [ ] Creating, renaming and deleting tiers — Settings edits the seeded ones
+- [ ] The Customers page still hard-codes gold and silver — its filter and
+  badges don't read `/api/tiers`, so a tier added on Settings doesn't appear
+  there
 - [ ] Containerised deployment behind a real HTTPS domain
 
 ## Deliberately out of scope
