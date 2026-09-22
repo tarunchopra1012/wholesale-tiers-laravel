@@ -22,7 +22,12 @@ export async function api(path, options = {}) {
     if (!response.ok) {
         // Laravel puts the reason in `message`. The status is the fallback;
         // statusText is empty over HTTP/2, which the tunnel uses.
-        throw new Error(body?.message ?? `Request failed with status ${response.status}.`);
+        const error = new Error(body?.message ?? `Request failed with status ${response.status}.`);
+        error.status = response.status;
+        // A 422 also lists each field's problems, keyed by the field's path,
+        // e.g. { "tiers.0.discount_value": ["A percentage must be …"] }.
+        error.errors = body?.errors ?? {};
+        throw error;
     }
 
     return body;

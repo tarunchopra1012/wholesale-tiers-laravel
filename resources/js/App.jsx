@@ -1,4 +1,4 @@
-import { AppProvider, Banner, Page } from '@shopify/polaris';
+import { AppProvider, Banner, Frame, Page } from '@shopify/polaris';
 import enTranslations from '@shopify/polaris/locales/en.json';
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
 import Customers from './pages/Customers.jsx';
@@ -27,16 +27,19 @@ export default function App() {
 
     return (
         <AppProvider i18n={enTranslations}>
-            <BrowserRouter>
-                <Routes>
-                    <Route path="/" element={<Customers />} />
-                    <Route path="/settings" element={<Settings />} />
-                    <Route path="/preview" element={<Preview />} />
-                    {/* Laravel serves this page on any path, so an unknown
-                        one would otherwise render nothing at all. */}
-                    <Route path="*" element={<Navigate to="/" replace />} />
-                </Routes>
-            </BrowserRouter>
+            {/* Polaris only renders a Toast inside a Frame. */}
+            <Frame>
+                <BrowserRouter>
+                    <Routes>
+                        <Route path="/" element={<Customers />} />
+                        <Route path="/settings" element={<Settings />} />
+                        <Route path="/preview" element={<Preview />} />
+                        {/* Laravel serves this page on any path, so an unknown
+                            one would otherwise render nothing at all. */}
+                        <Route path="*" element={<Navigate to="/" replace />} />
+                    </Routes>
+                </BrowserRouter>
+            </Frame>
         </AppProvider>
     );
 }
