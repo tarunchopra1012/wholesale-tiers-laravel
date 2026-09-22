@@ -11,9 +11,10 @@ use Illuminate\Database\Seeder;
 class TierSettingSeeder extends Seeder
 {
     /**
-     * The development shop these tiers belong to.
+     * A stand-in shop, created only when no store has installed the app
+     * yet, so a fresh database still has tiers to look at.
      */
-    private const SHOP_DOMAIN = 'wholesale-tiers-dev.myshopify.com';
+    private const FALLBACK_SHOP_DOMAIN = 'wholesale-tiers-dev.myshopify.com';
 
     /**
      * Percentage discount per customer tag.
@@ -26,22 +27,26 @@ class TierSettingSeeder extends Seeder
     ];
 
     /**
-     * Seed one shop with two wholesale tiers.
+     * Give every installed shop whichever of the two tiers it doesn't have.
+     * Safe to run again: existing tiers are left as they are.
      */
     public function run(): void
     {
-        $shop = Shop::query()->firstWhere('shop_domain', self::SHOP_DOMAIN)
-            ?? Shop::factory()->create(['shop_domain' => self::SHOP_DOMAIN]);
+        if (! Shop::query()->exists()) {
+            Shop::factory()->create(['shop_domain' => self::FALLBACK_SHOP_DOMAIN]);
+        }
 
-        foreach (self::TIERS as $tag => $percentage) {
-            if ($shop->tierSettings()->where('tag', $tag)->exists()) {
-                continue;
+        foreach (Shop::query()->whereNull('uninstalled_at')->get() as $shop) {
+            foreach (self::TIERS as $tag => $percentage) {
+                if ($shop->tierSettings()->where('tag', $tag)->exists()) {
+                    continue;
+                }
+
+                TierSetting::factory()
+                    ->for($shop)
+                    ->percentage($percentage)
+                    ->create(['tag' => $tag]);
             }
-
-            TierSetting::factory()
-                ->for($shop)
-                ->percentage($percentage)
-                ->create(['tag' => $tag]);
         }
     }
 }
