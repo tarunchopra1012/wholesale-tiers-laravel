@@ -244,8 +244,9 @@ Built:
   lock) and throttle retries, and the first `/api/customers` endpoint
 - [x] React + Polaris + App Bridge shell, with client-side routes for
   Customers, Settings and Preview
-- [x] Customers page — `IndexTable` with name, email, tier badge and location,
-  filtered by tier, 25 at a time with Next and Previous
+- [x] Customers page — `IndexTable` with name, email, tier badges and
+  location, filtered by any of the shop's own tiers, 25 at a time with Next
+  and Previous
 - [x] `TierCalculator` — percentage or fixed discount in whole cents, exact
   decimal arithmetic, never below zero, rounded half-up; unit-tested
 - [x] `GET`, `POST`, `PUT` and `DELETE` on `/api/tiers`, plus
@@ -258,9 +259,6 @@ Built:
 
 Not built yet:
 
-- [ ] The Customers page still hard-codes gold and silver — its filter and
-  badges don't read `/api/tiers`, so a tier added on Settings doesn't appear
-  there
 - [ ] Containerised deployment behind a real HTTPS domain
 
 ## Deliberately out of scope

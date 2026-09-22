@@ -6,6 +6,7 @@ import {
     Card,
     EmptyState,
     IndexTable,
+    InlineStack,
     Page,
     Select,
     SkeletonBodyText,
@@ -15,20 +16,9 @@ import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../lib/api.js';
 
-// The tags the app treats as tiers, best first. Hard-coded until the
-// Settings page reads them from tier_settings.
-const TIERS = {
-    'wholesale-gold': { label: 'Gold', tone: 'success' },
-    'wholesale-silver': { label: 'Silver', tone: 'info' },
-};
-
 // No "Retail" option: the API filters by one tag, and untagged customers
 // have none to filter on.
-const TIER_OPTIONS = [
-    { label: 'All customers', value: '' },
-    { label: 'Gold', value: 'wholesale-gold' },
-    { label: 'Silver', value: 'wholesale-silver' },
-];
+const ALL_CUSTOMERS = { label: 'All customers', value: '' };
 
 const EMPTY_STATE_IMAGE =
     'https://cdn.shopify.com/s/files/1/0262/4071/2726/files/emptystate-files.png';
@@ -46,8 +36,28 @@ export default function Customers() {
     const [endCursor, setEndCursor] = useState(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
+    // The shop's tiers, as the Settings page saved them. They decide both
+    // what can be filtered on and which tags get a badge.
+    const [tiers, setTiers] = useState([]);
+    const [tiersError, setTiersError] = useState(null);
 
     const after = cursors[cursors.length - 1];
+
+    useEffect(() => {
+        let ignore = false;
+
+        api('/tiers')
+            .then((body) => {
+                if (!ignore) setTiers(body.data);
+            })
+            .catch((e) => {
+                if (!ignore) setTiersError(e.message);
+            });
+
+        return () => {
+            ignore = true;
+        };
+    }, []);
 
     useEffect(() => {
         // Switching filters or pages quickly can bring answers back out of
@@ -110,11 +120,21 @@ export default function Customers() {
                         <p>{error}</p>
                     </Banner>
                 )}
+                {tiersError && (
+                    <Banner tone="warning" title="Couldn't load this store's tiers">
+                        <p>
+                            The customers below are listed without their tiers. {tiersError}
+                        </p>
+                    </Banner>
+                )}
                 <Card padding="0">
                     <Box padding="400">
                         <Select
                             label="Tier"
-                            options={TIER_OPTIONS}
+                            options={[
+                                ALL_CUSTOMERS,
+                                ...tiers.map((t) => ({ label: t.tag, value: t.tag })),
+                            ]}
                             value={tier}
                             onChange={changeTier}
                         />
@@ -123,6 +143,7 @@ export default function Customers() {
                         loading={loading}
                         error={error}
                         customers={customers}
+                        tiers={tiers}
                         pagination={pagination}
                     />
                 </Card>
@@ -131,7 +152,7 @@ export default function Customers() {
     );
 }
 
-function CustomerList({ loading, error, customers, pagination }) {
+function CustomerList({ loading, error, customers, tiers, pagination }) {
     if (loading) {
         return (
             <Box padding="400">
@@ -175,7 +196,7 @@ function CustomerList({ loading, error, customers, pagination }) {
                     </IndexTable.Cell>
                     <IndexTable.Cell>{customer.email ?? '—'}</IndexTable.Cell>
                     <IndexTable.Cell>
-                        <TierBadge tags={customer.tags} />
+                        <TierBadges tags={customer.tags} tiers={tiers} />
                     </IndexTable.Cell>
                     <IndexTable.Cell>{customer.location ?? '—'}</IndexTable.Cell>
                 </IndexTable.Row>
@@ -184,15 +205,29 @@ function CustomerList({ loading, error, customers, pagination }) {
     );
 }
 
-function TierBadge({ tags }) {
-    // First match in TIERS order, so gold wins if a customer has both tags.
-    const tag = Object.keys(TIERS).find((t) => tags.includes(t));
+function TierBadges({ tags, tiers }) {
+    // Shopify's tag search ignores case — tag:WHOLESALE-GOLD finds a
+    // customer tagged wholesale-gold, checked on the dev store — so a tier
+    // whose tag is saved in another case must still badge its customers.
+    const lowercased = tags.map((tag) => tag.toLowerCase());
+    const matches = tiers.filter((tier) => lowercased.includes(tier.tag.toLowerCase()));
 
-    if (!tag) {
+    if (matches.length === 0) {
         return 'Retail';
     }
 
-    return <Badge tone={TIERS[tag].tone}>{TIERS[tag].label}</Badge>;
+    // One badge per matching tier, rather than picking a winner: which tier
+    // should win is a pricing question, and a percentage and a fixed amount
+    // can't be compared without a product's price.
+    return (
+        <InlineStack gap="100">
+            {matches.map((tier) => (
+                <Badge key={tier.id} tone="info">
+                    {tier.tag}
+                </Badge>
+            ))}
+        </InlineStack>
+    );
 }
 
 function fullName({ first_name, last_name }) {
