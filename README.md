@@ -202,6 +202,10 @@ diagnose:
   why the `vite` container builds files instead. If `public/hot` is left over
   from a dev server, delete it — while it exists, Laravel points the page at
   `localhost:5173`.
+- **The watch build stops for good if its entry file disappears**, for example
+  during a branch switch. It logs `Cannot resolve entry module` and never
+  rebuilds, while the admin keeps showing the last good build. Fix it with
+  `docker compose restart vite`.
 - **Laravel trusts the tunnel's `X-Forwarded-Proto` header.** The tunnel
   reaches nginx over plain HTTP. Without that trust, Laravel writes `http://`
   script links into an `https` page, and Chrome blocks them as mixed content —

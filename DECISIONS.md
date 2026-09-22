@@ -569,3 +569,13 @@ also renders in Chromium, checked outside the admin, where the API correctly
 answers 401.
 
 **Not yet seen:** the page inside the admin in Chrome.
+
+### The watch build stops when its entry file disappears
+
+`git checkout main`, before the merge, briefly removed `resources/js/main.jsx`.
+The watcher logged `Cannot resolve entry module resources/js/main.jsx` at
+13:47 UTC and never built again — not when the merge brought the file back,
+and not for a later edit. Nothing looked wrong, because nginx kept serving the
+last good build from `public/build`.
+
+**Fix:** `docker compose restart vite`. The README lists it under setup notes.
