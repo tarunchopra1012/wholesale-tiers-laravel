@@ -45,12 +45,14 @@ services:
       timeout: 5s
       retries: 20
 
+  # Builds into public/build and rebuilds on every save, rather than running
+  # the dev server. Inside the admin the page comes from the tunnel, and
+  # browsers block a public page from loading scripts off localhost:5173.
+  # Built files are served by nginx from the same address as the page.
   vite:
     image: node:22-alpine
     working_dir: /var/www/html
-    command: sh -c "npm install && npm run dev -- --host 0.0.0.0"
-    ports:
-      - "5173:5173"
+    command: sh -c "npm install && npm run build -- --watch"
     volumes:
       - .:/var/www/html
       - /var/www/html/node_modules
