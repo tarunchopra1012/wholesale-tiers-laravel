@@ -2,10 +2,11 @@ import {
     Banner,
     BlockStack,
     Box,
+    Button,
     Card,
     DataTable,
+    InlineStack,
     Page,
-    Select,
     SkeletonBodyText,
     Text,
 } from '@shopify/polaris';
@@ -15,29 +16,31 @@ import { api } from '../lib/api.js';
 
 export default function Preview() {
     const navigate = useNavigate();
-    const [products, setProducts] = useState([]);
-    const [productsLoading, setProductsLoading] = useState(true);
-    const [productsError, setProductsError] = useState(null);
-    const [productId, setProductId] = useState('');
+    // { id, title } of the product being priced, or null before one is known.
+    const [product, setProduct] = useState(null);
+    const [starting, setStarting] = useState(true);
+    const [startError, setStartError] = useState(null);
+    const [pickerError, setPickerError] = useState(null);
     const [preview, setPreview] = useState(null);
     const [previewLoading, setPreviewLoading] = useState(false);
     const [previewError, setPreviewError] = useState(null);
 
+    const productId = product?.id;
+
     useEffect(() => {
+        // Start on the store's first product by title, so there's a table
+        // straight away. Any other product comes from the picker.
         let ignore = false;
 
-        api('/products?limit=20')
+        api('/products?limit=1')
             .then((body) => {
-                if (ignore) return;
-                setProducts(body.data);
-                // Start on the first product, so there's a table straight away.
-                setProductId(body.data[0]?.id ?? '');
+                if (!ignore) setProduct(body.data[0] ?? null);
             })
             .catch((e) => {
-                if (!ignore) setProductsError(e.message);
+                if (!ignore) setStartError(e.message);
             })
             .finally(() => {
-                if (!ignore) setProductsLoading(false);
+                if (!ignore) setStarting(false);
             });
 
         return () => {
@@ -76,6 +79,30 @@ export default function Preview() {
         };
     }, [productId]);
 
+    async function pickProduct() {
+        setPickerError(null);
+
+        try {
+            // Shopify's own product picker, drawn by the admin with its own
+            // search and paging. It answers with the chosen products, or
+            // undefined when the merchant cancels. Only the ID is used for
+            // pricing: Laravel still reads the price from Shopify.
+            const selection = await window.shopify.resourcePicker({
+                type: 'product',
+                action: 'select',
+                // The preview prices the first variant, so offering a choice
+                // of variant would suggest a difference that isn't there.
+                filter: { variants: false },
+            });
+
+            if (selection?.[0]) {
+                setProduct({ id: selection[0].id, title: selection[0].title });
+            }
+        } catch (e) {
+            setPickerError(e.message);
+        }
+    }
+
     return (
         <Page
             title="Price preview"
@@ -83,9 +110,18 @@ export default function Preview() {
             secondaryActions={[{ content: 'Tier settings', onAction: () => navigate('/settings') }]}
         >
             <BlockStack gap="400">
-                {productsError && (
+                {startError && (
                     <Banner tone="critical" title="Couldn't load products">
-                        <p>{productsError}</p>
+                        <p>{startError}</p>
+                    </Banner>
+                )}
+                {pickerError && (
+                    <Banner
+                        tone="critical"
+                        title="Couldn't open the product picker"
+                        onDismiss={() => setPickerError(null)}
+                    >
+                        <p>{pickerError}</p>
                     </Banner>
                 )}
                 {previewError && (
@@ -95,33 +131,34 @@ export default function Preview() {
                 )}
                 <Card padding="0">
                     <Box padding="400">
-                        <ProductPicker
-                            loading={productsLoading}
-                            products={products}
-                            value={productId}
-                            onChange={setProductId}
+                        <ProductHeader
+                            loading={starting}
+                            empty={!starting && !startError && !product}
+                            product={product}
+                            onPick={pickProduct}
                         />
                     </Box>
-                    <PriceTable loading={productsLoading || previewLoading} preview={preview} />
+                    <PriceTable loading={starting || previewLoading} preview={preview} />
                 </Card>
             </BlockStack>
         </Page>
     );
 }
 
-function ProductPicker({ loading, products, value, onChange }) {
-    if (!loading && products.length === 0) {
+function ProductHeader({ loading, empty, product, onPick }) {
+    if (empty) {
         return <Text as="p">This store has no products yet.</Text>;
     }
 
     return (
-        <Select
-            label="Product"
-            options={products.map((product) => ({ label: product.title, value: product.id }))}
-            value={value}
-            onChange={onChange}
-            disabled={loading}
-        />
+        <InlineStack align="space-between" blockAlign="center" gap="400">
+            <Text as="h2" variant="headingMd">
+                {product?.title}
+            </Text>
+            <Button onClick={onPick} disabled={loading}>
+                Choose product
+            </Button>
+        </InlineStack>
     );
 }
 

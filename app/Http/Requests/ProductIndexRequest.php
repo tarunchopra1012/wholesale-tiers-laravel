@@ -23,8 +23,9 @@ final class ProductIndexRequest extends FormRequest
     public function rules(): array
     {
         return [
-            // The Preview page only needs a short list to pick from. 20
-            // products cost 23 of the 2000-point budget on the dev store.
+            // The Preview page asks for 1, to open on the first product;
+            // Shopify's own picker handles the rest. 20 products cost 23 of
+            // the 2000-point budget on the dev store.
             'limit' => ['sometimes', 'integer', 'between:1,50'],
         ];
     }
