@@ -12,6 +12,7 @@ import {
     Text,
 } from '@shopify/polaris';
 import { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { api } from '../lib/api.js';
 
 // The tags the app treats as tiers, best first. Hard-coded until the
@@ -33,6 +34,7 @@ const EMPTY_STATE_IMAGE =
     'https://cdn.shopify.com/s/files/1/0262/4071/2726/files/emptystate-files.png';
 
 export default function Customers() {
+    const navigate = useNavigate();
     const [tier, setTier] = useState('');
     const [customers, setCustomers] = useState([]);
     const [loading, setLoading] = useState(true);
@@ -66,7 +68,13 @@ export default function Customers() {
     }, [tier]);
 
     return (
-        <Page title="Customers">
+        <Page
+            title="Customers"
+            secondaryActions={[
+                { content: 'Tier settings', onAction: () => navigate('/settings') },
+                { content: 'Price preview', onAction: () => navigate('/preview') },
+            ]}
+        >
             <BlockStack gap="400">
                 {error && (
                     <Banner tone="critical" title="Couldn't load customers">
