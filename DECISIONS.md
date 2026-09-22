@@ -891,4 +891,10 @@ Every endpoint was checked with `curl` first, including a duplicate tag in
 another case, a tag with spaces, `x OR tag:y`, 150%, a fixed 0, `12.345`, a
 repeated id, a missing id, another shop's tier id (404) and a non-numeric id.
 
+**Inside the admin,** Tarun used the Settings page himself while this was
+being written: the store's gold discount moved to 30% and silver came back
+under a new row id, which means a tier was saved, one was deleted and one was
+created there. So those three work with an ID token issued by App Bridge, not
+only with a hand-signed one.
+
 **Not yet seen:** the product picker itself. It only exists inside the admin.
