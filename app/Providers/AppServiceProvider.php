@@ -4,6 +4,7 @@ namespace App\Providers;
 
 use App\Services\Shopify\OAuthHmacVerifier;
 use App\Services\Shopify\OAuthService;
+use App\Services\Shopify\SessionTokenVerifier;
 use Illuminate\Support\ServiceProvider;
 use RuntimeException;
 
@@ -25,6 +26,11 @@ class AppServiceProvider extends ServiceProvider
             apiSecret: $this->requiredShopifyConfig('api_secret'),
             scopes: $this->requiredShopifyConfig('scopes'),
             appUrl: $this->requiredShopifyConfig('app_url'),
+        ));
+
+        $this->app->bind(SessionTokenVerifier::class, fn (): SessionTokenVerifier => new SessionTokenVerifier(
+            secret: $this->requiredShopifyConfig('api_secret'),
+            clientId: $this->requiredShopifyConfig('api_key'),
         ));
     }
 
