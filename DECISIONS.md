@@ -732,3 +732,163 @@ dripper $1,294.00. Gold and silver were put back to 20% and 10% afterwards.
 
 **Not yet seen:** any of this inside the admin, with a real ID token from App
 Bridge.
+
+---
+
+## 22–23 Sep 2026 — paging, the product picker and tier management
+
+### Previous walks back through cursors we've already seen
+
+Shopify's cursor paging can go backwards, with `last` and `before` instead of
+`first` and `after`. It isn't used. The page keeps a list of the cursors each
+page started after — the first page starts after nothing — so Previous drops
+the last one and asks for that page again. `hasPrevious` is just "the list
+has more than one entry in it".
+
+**Why:** no change to `CustomerQuery`, no second code path through the query,
+and the answer to Previous is the page the merchant already saw. Shopify's
+own backward paging would have to be verified separately against the API.
+
+**Cost:** page numbers are only "how many pages deep", and jumping to a page
+isn't possible. Neither is on offer in the UI.
+
+Changing the tier filter empties the list, because a cursor only means
+something inside the search it came from.
+
+### The page size stays on the server
+
+The page asks for no size; `CustomerQuery::page()` decides, at 25. The dev
+store has 8 customers, so Next never appears there: the check was done by
+setting that default to 3 for a few minutes, seeing pages of 3, 3 and 2 with
+nobody repeated, and setting it back.
+
+### Shopify's own product picker, rather than search in Laravel
+
+Choosing a product on the Preview page now opens `shopify.resourcePicker`,
+which the admin draws, with its own search and paging. The alternative was
+adding `query:` and cursor paging to `ProductQuery` and building a
+search-as-you-type picker in Polaris.
+
+**Why:** the admin already has this, with a better picker than we would
+write, and it needs no new endpoint, no Shopify search syntax to escape and
+no paging state on the page.
+
+The app's rules still hold: no Shopify call is made from React, no access
+token goes near the browser, and the price is still read from Shopify by
+Laravel using the chosen ID. The picker hands back an ID, nothing more.
+
+**Cost:** it exists only inside the admin. Outside it there is no
+`window.shopify`, so the button answers with a banner — which is also how it
+was seen to fail cleanly. `GET /api/products` is still used, for `limit=1`,
+so the page opens on a product rather than on nothing.
+
+### Tiers are matched by id, not by tag
+
+`PUT /api/tiers` used to find each tier by its tag. It can't any more: the
+tag is one of the things that changes. Tiers now carry `id` in their JSON,
+and the PUT matches on it.
+
+### Renaming a tier means changing its tag, and retags nobody
+
+A tier *is* a customer tag. Renaming `wholesale-gold` to `wholesale-platinum`
+leaves every Shopify customer tagged `wholesale-gold`, so they stop getting
+that tier. The field's help text says exactly that.
+
+**Alternative considered:** a separate display name column, with the tag
+fixed once created. Rejected — it changes the table CLAUDE.md specifies, and
+it would hide the thing that actually matters, which is which tag the
+discount is attached to. Renaming is genuinely useful the other way round:
+fixing a tier to match the tag the customers really have.
+
+### Adding and deleting are their own requests, not part of Save
+
+Save sends the whole list of tiers, so the obvious design is for the server
+to treat that list as the complete set: create what's new, delete what's
+missing. That would mean a second tab with an older list silently deleting a
+tier the first tab just added. So `POST /api/tiers` adds one, `DELETE
+/api/tiers/{id}` removes one, and the PUT only ever touches the ids it was
+sent.
+
+A delete asks for confirmation first, and says that the customers keep their
+Shopify tags and will simply be treated as Retail here.
+
+### The unique index is the real guard, and a 422 is its answer
+
+Validation checks that a tag isn't already used by another of this shop's
+tiers. Two requests can both pass that check before either one inserts, so
+`UniqueConstraintViolationException` is caught in the controller and turned
+into a 422 with the same message a merchant would have seen from validation.
+
+**Checked, not assumed:** two identical creates fired at once, six times
+over. Each round gave one 201 and one 422, and the gaps in the auto-increment
+ids show the losing insert really reached MySQL and was stopped by the index.
+
+### Swapping two tiers' tags in one save is refused
+
+Each tag is checked against every other tier's tag as it stands now,
+including the others in the same request. So renaming gold to
+`wholesale-silver` while silver becomes `wholesale-gold` fails validation,
+with the message under both fields, instead of tripping the unique index
+halfway through the transaction. It takes two saves, through a temporary
+name.
+
+### One list of tier rules for creating and editing
+
+`TierRules` holds a tier's rules and its merchant-worded messages, and both
+Form Requests use it. Without it the two would drift, and a tier could be
+created at a value that could never be saved again.
+
+Its `TAG_PATTERN` is also what `CustomerIndexRequest` now uses, so a tag that
+can be created is always a tag that can be filtered on. The 22 Sep entry on
+the `tier` filter asked for exactly that.
+
+### Tags are matched ignoring case, because Shopify does
+
+**Checked on the dev store:** `tag:WHOLESALE-GOLD` returns the customers
+tagged `wholesale-gold`. So the Customers page lowercases both sides before
+deciding which badges to show; otherwise a tier saved as `WHOLESALE-GOLD`
+would filter correctly and then label everyone Retail.
+
+MySQL agrees, through the table's `utf8mb4_unicode_ci` collation: `Gold` and
+`gold` count as the same tag, both in the unique index and in the validation
+that reads it. Creating `Wholesale-Bronze` next to `wholesale-bronze` is
+refused.
+
+### A customer in two tiers gets two badges
+
+The Customers page used to pick a winner — gold beat silver, by the order
+they were hard-coded in. With tiers a merchant defines, there is no such
+order, and a percentage can't be compared with a fixed amount without a
+product's price. So every matching tier gets a badge, and the app doesn't
+pretend to know which one wins.
+
+**Still open, and now explicitly so:** `checkout-tier-discount-function.md`
+assumed the Customers page's "gold wins" would line up with a Function's
+`MAXIMUM` strategy. That assumption is gone; whichever tier wins at checkout
+is a decision for that work.
+
+All tier badges share one tone. Green for gold and blue for silver only
+worked while there were exactly two tiers, both known in advance.
+
+### Checkpoint
+
+Again in Claude's browser pane rather than the admin, with each request given
+an ID token signed by hand:
+
+- Paging, at 3 customers a page: pages of 3, 3 and 2, Previous returning the
+  page just seen, and switching to Silver going back to page 1.
+- Settings: adding a tier, `Wholesale-Gold` at 150% refused with both
+  messages under their own fields, the same tier added as
+  `wholesale-bronze`, renamed to `wholesale-copper` and saved, a clashing
+  rename refused, and the tier deleted through the confirmation dialog.
+- Customers: a tier saved as `CAFE` — four customers on the dev store carry a
+  lowercase `cafe` tag — appeared in the filter, badged those four next to
+  their gold or silver badge, and filtering by it returned exactly them. The
+  tier was deleted afterwards.
+- Both error banners, seen when a page loaded without a token.
+
+Every endpoint was checked with `curl` first, including a duplicate tag in
+another case, a tag with spaces, `x OR tag:y`, 150%, a fixed 0, `12.345`, a
+repeated id, a missing id, another shop's tier id (404) and a non-numeric id.
+
+**Not yet seen:** the product picker itself. It only exists inside the admin.
