@@ -36,24 +36,39 @@ const EMPTY_STATE_IMAGE =
 export default function Customers() {
     const navigate = useNavigate();
     const [tier, setTier] = useState('');
+    // The cursor each visited page started after, oldest first; the first
+    // page starts after nothing. Shopify only hands out a cursor for the
+    // next page, so Previous steps back through this list instead of asking
+    // Shopify for the page before.
+    const [cursors, setCursors] = useState([null]);
     const [customers, setCustomers] = useState([]);
+    const [hasNextPage, setHasNextPage] = useState(false);
+    const [endCursor, setEndCursor] = useState(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
 
+    const after = cursors[cursors.length - 1];
+
     useEffect(() => {
-        // Switching filters quickly can bring answers back out of order.
-        // Each run drops its result once a newer run has started, so a slow
-        // "Gold" answer can't overwrite the "Silver" one.
+        // Switching filters or pages quickly can bring answers back out of
+        // order. Each run drops its result once a newer run has started, so
+        // a slow "Gold" answer can't overwrite the "Silver" one.
         let ignore = false;
 
         setLoading(true);
         setError(null);
 
-        const query = tier ? `?${new URLSearchParams({ tier })}` : '';
+        const params = new URLSearchParams();
+        if (tier) params.set('tier', tier);
+        if (after) params.set('after', after);
+        const query = params.toString() ? `?${params}` : '';
 
         api(`/customers${query}`)
             .then((body) => {
-                if (!ignore) setCustomers(body.data);
+                if (ignore) return;
+                setCustomers(body.data);
+                setHasNextPage(body.page_info.has_next_page);
+                setEndCursor(body.page_info.end_cursor);
             })
             .catch((e) => {
                 if (!ignore) setError(e.message);
@@ -65,7 +80,21 @@ export default function Customers() {
         return () => {
             ignore = true;
         };
-    }, [tier]);
+    }, [tier, after]);
+
+    function changeTier(value) {
+        setTier(value);
+        // A cursor only means something within the search it came from.
+        setCursors([null]);
+    }
+
+    const pagination = {
+        hasPrevious: cursors.length > 1,
+        onPrevious: () => setCursors((current) => current.slice(0, -1)),
+        hasNext: hasNextPage,
+        onNext: () => setCursors((current) => [...current, endCursor]),
+        label: `Page ${cursors.length}`,
+    };
 
     return (
         <Page
@@ -87,17 +116,22 @@ export default function Customers() {
                             label="Tier"
                             options={TIER_OPTIONS}
                             value={tier}
-                            onChange={setTier}
+                            onChange={changeTier}
                         />
                     </Box>
-                    <CustomerList loading={loading} error={error} customers={customers} />
+                    <CustomerList
+                        loading={loading}
+                        error={error}
+                        customers={customers}
+                        pagination={pagination}
+                    />
                 </Card>
             </BlockStack>
         </Page>
     );
 }
 
-function CustomerList({ loading, error, customers }) {
+function CustomerList({ loading, error, customers, pagination }) {
     if (loading) {
         return (
             <Box padding="400">
@@ -124,6 +158,7 @@ function CustomerList({ loading, error, customers }) {
             resourceName={{ singular: 'customer', plural: 'customers' }}
             itemCount={customers.length}
             selectable={false}
+            pagination={pagination}
             headings={[
                 { title: 'Name' },
                 { title: 'Email' },
