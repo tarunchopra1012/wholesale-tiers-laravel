@@ -438,3 +438,134 @@ tokens never reach a view.
 through the router shows `SubstituteBindings` and `VerifyShopifySessionToken`
 — no `StartSession`, no `PreventRequestForgery`. And `curl` against
 `/api/customers` gets no `Set-Cookie` header, while `/` gets two.
+
+---
+
+## 22 Sep 2026 — React shell and the Customers page
+
+### Polaris React, although it's deprecated
+
+npm marks `@shopify/polaris` "deprecated and no longer maintained". The last
+release is 13.9.5, from March 2025, and Shopify now points to Polaris web
+components. It's kept for this build anyway: it works with React 18, and the
+spec for this page was written against it.
+
+Switching later is contained. No Shopify call lives in React, so replacing the
+UI layer only touches `resources/js`.
+
+**Alternative considered:** web components now. Rejected for this build — it
+means rewriting the page spec, and probably moving to React 19, because React
+18 only passes strings to custom elements and can't listen to their custom
+events. **Planned** as a later upgrade.
+
+### `@laravel/multiplex` removed, to keep React 18
+
+The Laravel 13 starter lists `@laravel/multiplex` as an optional dependency.
+It's the terminal dashboard behind `php artisan dev`, and it depends on
+`react ^19.2.7` — the lock file had `react@19.3.0` installed for it. Polaris
+React accepts only `^18`, so `npm install` stopped with `ERESOLVE`. "Optional"
+didn't help: optional packages still take part in that check.
+
+Removed. Compose already runs each process in its own container, and
+`artisan dev` needs PHP on the host, which this setup doesn't have.
+**Cost:** `composer run dev` no longer works.
+
+**Alternative considered:** `--legacy-peer-deps`. Rejected — it switches the
+check off instead of resolving the clash, and every later install would need
+the flag.
+
+### Built files inside the admin, not the Vite dev server
+
+In dev, the page comes from the tunnel, but the dev server serves its scripts
+from `localhost:5173`. Two things got in the way:
+
+1. **CORS.** Module scripts are always fetched with a CORS check, and the
+   Laravel Vite plugin (3.2.0) only allows `localhost` and `APP_URL`. A
+   `server.cors` entry for `SHOPIFY_APP_URL` fixed that: the dev server then
+   answered with the tunnel in `Access-Control-Allow-Origin`.
+2. **Still a blank frame in the admin**, in Firefox. In Claude's browser pane
+   (Chromium), the three `localhost:5173` requests failed with
+   `ERR_BLOCKED_BY_CLIENT`. That's that browser's own block, so it shows the
+   kind of failure — a public page loading from `localhost` — not Firefox's
+   exact reason, which wasn't captured.
+
+**Fix:** the `vite` container runs `npm run build -- --watch`, and nginx serves
+`public/build` from the same address as the page. The CORS entry came back out,
+because nothing uses it now. **Cost:** no hot reload; refresh the frame after
+saving. The 19 Sep `hmr.host` entry now only matters if someone runs the dev
+server by hand.
+
+**Alternative considered:** proxying the dev server through nginx and the
+tunnel, with hot reload over `wss`. Rejected for now: more config, and it would
+depend on the tunnel address, which changes on every restart.
+
+### Laravel trusts `X-Forwarded-Proto`, and only that
+
+With built files, the script links came out as `http://<tunnel>/build/...`
+inside an `https` page. The tunnel reaches nginx over plain HTTP, and Laravel
+builds links from what it sees. Firefox loaded them, and the page worked.
+Chromium blocked both files as mixed content, and the page stayed blank — its
+console named both.
+
+**Fix:** `trustProxies(at: '*', headers: Request::HEADER_X_FORWARDED_PROTO)`.
+Afterwards the links read `https://`, Chromium loaded both files with a 200,
+and `localhost:8000` still gets `http://` links.
+
+Only the scheme header is trusted. The Host header already arrives intact, and
+a forged `X-Forwarded-Host` sent to `localhost:8000` was ignored — checked. A
+forged `X-Forwarded-Proto` can only change the links on the sender's own page.
+
+**Still open, for deployment:** pin the proxy's real address instead of `*`,
+and set `APP_DEBUG=false`. With debug on, a 401 returns a full stack trace to
+anyone who has the tunnel address.
+
+### The page catch-all skips `/api`
+
+`Route::view('/{path?}', 'app')` with the pattern `(?!api(/|$)).*`, declared
+after `/auth`. A reload on `/settings` gets the page. An unknown `/api/...` path
+still answers a JSON 404, instead of HTML that would then break
+`response.json()` somewhere confusing.
+
+Checked with `curl`: `/`, `/settings` and `/preview` answer 200 with the page,
+`/api/nope` answers a JSON 404, and `/up` is still the health check.
+
+### The entry file is `main.jsx`
+
+The Mac's disk ignores upper and lower case in file names, so `app.jsx` and
+`App.jsx` are the same file. Found the hard way: writing `App.jsx` replaced
+the entry file that had just been created.
+
+### Location is Shopify's `formattedArea`
+
+`defaultAddress { formattedArea }` returns Shopify's own "city province,
+country" string, such as "Mumbai MH, India". Checked on the dev store before
+any code was written: 7 of 8 customers have one, and the eighth has no address
+and shows "—".
+
+Address is its own item in the protected-customer-data form. The query came back
+without `ACCESS_DENIED`, so that item is covered.
+
+### Tiers are read from tags in the browser, for now
+
+`wholesale-gold` shows a green Gold badge, `wholesale-silver` a blue Silver
+one, and anything else "Retail". These are hard-coded until Settings reads
+`tier_settings`. A customer with both tags counts as gold.
+
+The filter has no Retail option: the API filters by one tag, and untagged
+customers have none. The page shows the first 25 customers; there's no
+pagination yet.
+
+### A slow answer can't overwrite a newer filter
+
+Changing the filter quickly can bring answers back out of order. Each fetch
+throws away its result once a newer one has started — the `ignore` flag in the
+effect's cleanup. Not seen happen by hand: the dev store answers too fast.
+
+### Checkpoint
+
+Inside the admin, the Customers page rendered in Firefox — reported by Tarun
+with a screen recording on 22 Sep. After the `X-Forwarded-Proto` fix, the page
+also renders in Chromium, checked outside the admin, where the API correctly
+answers 401.
+
+**Not yet seen:** the page inside the admin in Chrome.

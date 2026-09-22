@@ -73,6 +73,7 @@ app/
   Support/
     TierCalculator.php          pure pricing logic, no I/O, unit-testable
 resources/js/
+  main.jsx               entry; not app.jsx — macOS can't hold it beside App.jsx
   App.jsx
   pages/                 Customers.jsx, Settings.jsx, Preview.jsx
   lib/api.js             fetch wrapper; App Bridge handles the auth header
@@ -125,6 +126,9 @@ query TieredCustomers($query: String!, $first: Int!, $after: String) {
         tags
         defaultEmailAddress {
           emailAddress
+        }
+        defaultAddress {
+          formattedArea
         }
       }
     }

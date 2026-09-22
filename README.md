@@ -4,10 +4,11 @@ An embedded Shopify admin app that lets a merchant assign wholesale discount
 tiers to customers by tag and preview the resulting prices.
 
 > **Status: early.** The development environment, the Laravel scaffold, the
-> database layer, the OAuth install flow, session-token verification and the
-> first Admin API endpoint (`/api/customers`) are in place. There is no UI
-> yet — the admin page only loads App Bridge. The roadmap below marks
-> honestly what exists and what doesn't.
+> database layer, the OAuth install flow, session-token verification, the
+> `/api/customers` endpoint and the first page — Customers, in React and
+> Polaris inside the admin — are in place. Settings and Preview are empty
+> placeholders. The roadmap below marks honestly what exists and what
+> doesn't.
 
 ## The problem it solves
 
@@ -132,8 +133,13 @@ docker compose exec app php artisan migrate --seed
 | Service      | URL / Port              |
 | ------------ | ----------------------- |
 | App          | http://localhost:8000   |
-| Vite dev     | http://localhost:5173   |
 | MySQL        | 127.0.0.1:3307          |
+
+The `vite` container doesn't run a dev server. It builds the frontend into
+`public/build` and rebuilds on every save, so after a change, wait a second
+and refresh the app's frame in the admin. `localhost:8000` renders the page
+too, but every API call there answers 401: only the admin can supply the ID
+token.
 
 Run artisan inside the container, not on the host:
 
@@ -190,10 +196,17 @@ diagnose:
   `shops.access_token` uses Laravel's `encrypted` cast, so a missing key fails
   with `No application encryption key has been specified` — at seed time
   rather than at migrate time, which makes it look like a seeder bug.
-- **The Vite dev server advertises `localhost`, not `0.0.0.0`.** It binds to
-  all interfaces inside the container, but `public/hot` has to contain an
-  address a browser can actually reach. `0.0.0.0` is not one, and the symptom
-  is a completely unstyled page with no error.
+- **Inside the admin, the page can't load scripts from the Vite dev server.**
+  The page comes from the public tunnel address and the dev server is on
+  `localhost:5173`; browsers block that. The symptom is a blank frame. That's
+  why the `vite` container builds files instead. If `public/hot` is left over
+  from a dev server, delete it — while it exists, Laravel points the page at
+  `localhost:5173`.
+- **Laravel trusts the tunnel's `X-Forwarded-Proto` header.** The tunnel
+  reaches nginx over plain HTTP. Without that trust, Laravel writes `http://`
+  script links into an `https` page, and Chrome blocks them as mixed content —
+  another blank frame. Firefox loaded them anyway, so it can look fixed when it
+  isn't.
 
 ## Roadmap
 
@@ -209,11 +222,14 @@ Built:
   `/api` request, shop taken from the token's `dest` claim
 - [x] `ShopifyGraphQLClient` with token refresh (one shop at a time, under a
   lock) and throttle retries, and the first `/api/customers` endpoint
+- [x] React + Polaris + App Bridge shell, with client-side routes for
+  Customers, Settings and Preview
+- [x] Customers page — `IndexTable` with name, email, tier badge and location,
+  filtered by tier
 
 Not built yet:
 
-- [ ] React + Polaris + App Bridge shell
-- [ ] Customers page — `IndexTable` with tier badges and filtering
+- [ ] Pagination on the Customers page — it shows the first 25
 - [ ] Settings page — discount percentage per tier
 - [ ] Price preview — base price against each tier's price
 - [ ] Containerised deployment behind a real HTTPS domain
