@@ -10,7 +10,7 @@ use Illuminate\Http\Resources\Json\JsonResource;
 /**
  * One customer, as already flattened by CustomerQuery.
  *
- * @property array{id: string, firstName: ?string, lastName: ?string, email: ?string, tags: list<string>} $resource
+ * @property array{id: string, firstName: ?string, lastName: ?string, email: ?string, tags: list<string>, location: ?string} $resource
  */
 final class CustomerResource extends JsonResource
 {
@@ -25,6 +25,7 @@ final class CustomerResource extends JsonResource
             'last_name' => $this->resource['lastName'],
             'email' => $this->resource['email'],
             'tags' => $this->resource['tags'],
+            'location' => $this->resource['location'],
         ];
     }
 }

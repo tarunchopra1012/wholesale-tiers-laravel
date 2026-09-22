@@ -14,6 +14,8 @@ final readonly class CustomerQuery
     /**
      * Verified against the 2026-07 Admin API (see CLAUDE.md). A customer's
      * email is under defaultEmailAddress — there is no flat `email` field.
+     * formattedArea is Shopify's own "city province, country" string, e.g.
+     * "Mumbai MH, India"; checked against the dev store on 22 Sep 2026.
      */
     private const QUERY = <<<'GRAPHQL'
         query TieredCustomers($query: String!, $first: Int!, $after: String) {
@@ -27,6 +29,9 @@ final readonly class CustomerQuery
                 tags
                 defaultEmailAddress {
                   emailAddress
+                }
+                defaultAddress {
+                  formattedArea
                 }
               }
             }
@@ -45,7 +50,7 @@ final readonly class CustomerQuery
      * get the next one.
      *
      * @return array{
-     *     customers: list<array{id: string, firstName: ?string, lastName: ?string, email: ?string, tags: list<string>}>,
+     *     customers: list<array{id: string, firstName: ?string, lastName: ?string, email: ?string, tags: list<string>, location: ?string}>,
      *     pageInfo: array{hasNextPage: bool, endCursor: ?string},
      * }
      *
@@ -84,7 +89,7 @@ final readonly class CustomerQuery
 
     /**
      * @param  array<string, mixed>  $node
-     * @return array{id: string, firstName: ?string, lastName: ?string, email: ?string, tags: list<string>}
+     * @return array{id: string, firstName: ?string, lastName: ?string, email: ?string, tags: list<string>, location: ?string}
      */
     private function customer(array $node): array
     {
@@ -95,6 +100,8 @@ final readonly class CustomerQuery
             // defaultEmailAddress is null for a customer with no email.
             'email' => $node['defaultEmailAddress']['emailAddress'] ?? null,
             'tags' => $node['tags'] ?? [],
+            // defaultAddress is null for a customer with no saved address.
+            'location' => $node['defaultAddress']['formattedArea'] ?? null,
         ];
     }
 }
