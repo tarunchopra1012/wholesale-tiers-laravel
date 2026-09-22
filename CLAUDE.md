@@ -47,7 +47,8 @@ Browser (React in admin iframe)
   ▼
 Laravel  ── VerifyShopifySessionToken middleware
   │        verifies signature (app secret), aud, exp; resolves shop from dest
-  │        attaches $request->shop
+  │        attaches it as $request->attributes->get('shop')
+  │        (never $request->shop — that magic property reads ?shop= input)
   ▼
 ShopifyGraphQLClient
   │  POST https://{shop}/admin/api/2026-07/graphql.json

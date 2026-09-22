@@ -4,9 +4,10 @@ An embedded Shopify admin app that lets a merchant assign wholesale discount
 tiers to customers by tag and preview the resulting prices.
 
 > **Status: early.** The development environment, the Laravel scaffold, the
-> database layer and the OAuth install flow are in place. There are no Admin
-> API calls and no UI yet. The roadmap below marks honestly what exists and
-> what doesn't.
+> database layer, the OAuth install flow, session-token verification and the
+> first Admin API endpoint (`/api/customers`) are in place. There is no UI
+> yet — the admin page only loads App Bridge. The roadmap below marks
+> honestly what exists and what doesn't.
 
 ## The problem it solves
 
@@ -204,12 +205,13 @@ Built:
   and a development seeder
 - [x] OAuth install flow — shop-domain check, HMAC and one-time nonce
   verification, expiring offline token stored encrypted
+- [x] Session-token verification middleware — ID token checked on every
+  `/api` request, shop taken from the token's `dest` claim
+- [x] `ShopifyGraphQLClient` with token refresh (one shop at a time, under a
+  lock) and throttle retries, and the first `/api/customers` endpoint
 
 Not built yet:
 
-- [ ] Session-token verification middleware
-- [ ] `ShopifyGraphQLClient` with token refresh, and the first
-  `/api/customers` endpoint
 - [ ] React + Polaris + App Bridge shell
 - [ ] Customers page — `IndexTable` with tier badges and filtering
 - [ ] Settings page — discount percentage per tier
@@ -226,7 +228,7 @@ The exclusions are as considered as the build:
 | Theme app extension                      | A display concern on the storefront, separate from the pricing engine                                                     |
 | Webhooks (`app/uninstalled`, `customers/update`) | Needed for production hygiene — orphaned records on uninstall — but adds infrastructure without changing what the app demonstrates |
 | Billing API, GDPR webhooks, multi-store  | These only matter for public App Store distribution                                                                       |
-| Broad test coverage                      | `TierCalculator`, the pure pricing logic, is the one class that will get unit tests. It isn't written yet, so nothing is covered today — and this README isn't going to pretend otherwise. |
+| Broad test coverage                      | Tests cover only the places where a bug would be a security hole or a silent failure: the OAuth HMAC check, session-token verification, the middleware's shop resolution, token refresh and the throttle retry. `TierCalculator` will get unit tests when it exists. Controllers, views and the happy path through Shopify are checked by hand against a development store. |
 
 ## License
 

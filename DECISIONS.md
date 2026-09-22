@@ -311,3 +311,130 @@ the Network tab once the React shell exists.
 token only lives 60 seconds, so a large leeway would noticeably stretch a
 stolen token's life. It's a static, so it applies process-wide; the verifier
 is the only code that decodes JWTs.
+
+---
+
+## 22 Sep 2026 — GraphQL client and the customers endpoint
+
+### Access tokens are refreshed before each call, one shop at a time
+
+The token saved at install lives an hour, so `ShopifyGraphQLClient` asks
+`OAuthService::freshAccessToken()` for it on every attempt. With more than a
+minute left, the stored token comes straight back. Otherwise it's refreshed
+with `grant_type=refresh_token`. Each refresh also returns a new refresh
+token, and both are saved — the old refresh token stops working once the new
+one is used.
+
+Shopify's docs warn: refresh one store at a time. Two requests refreshing
+together each retire the other's result, so one of them ends up holding a
+token that's already dead. The refresh therefore runs under a per-shop cache
+lock, and **the row is reloaded inside the lock**. If another request
+refreshed while this one waited, the reload shows a fresh token and nothing
+more happens. Without the reload, the lock would only make the two refreshes
+take turns; both would still run.
+
+A test covers exactly that case: a stale model, a fresh row, and no HTTP
+request allowed. Removing the reload line makes the test fail — checked by
+doing it.
+
+Smaller details:
+
+- The lock lasts 30 seconds and the refresh request times out after 10, so
+  the lock can't expire while a refresh is still in flight.
+- A 401 on refresh is final: the refresh token is dead and the merchant must
+  reinstall. It isn't retried.
+- The stored shop domain goes back through `ShopDomain` before refreshing,
+  although install already checked it. The app-wide client secret is about to
+  be posted to that host.
+- `install()` and the refresh share one method that turns Shopify's token
+  response into columns, so the two can't drift apart.
+
+### The throttle retry is written by hand
+
+Shopify reports GraphQL throttling as HTTP 429 or — more often — as a normal
+200 with `THROTTLED` in the `errors` array. Laravel's `Http::retry()` only
+reacts to failed status codes, so it would never see the second kind.
+
+The client retries twice, waiting 1 second and then 2, through Laravel's
+`Sleep` so tests can fake the waits instead of sitting through them. A
+development store almost never throttles, so a faked test is the only proof
+the loop works.
+
+**Better, not built:** the response's `extensions.cost.throttleStatus` says
+how many points are left and how fast they come back, so a client could wait
+exactly as long as it needs to.
+
+### Only the cost block is logged
+
+Each Admin API response logs the shop, the status and `extensions.cost` at
+debug level. Never the variables, never the body: customer names and emails
+are protected customer data and have no business in a log file.
+
+### `tier` is limited to letters, digits, `-` and `_`
+
+The tier is pasted into Shopify's search syntax as `tag:<tier>`. Unchecked,
+`?tier=x OR tag:y` would change what the search matches. It can't reach
+another shop — the token pins the shop — but it's still user input going into
+a query language. The regex ends in `\z`, like `ShopDomain`'s.
+
+**Cost:** a merchant tag with a space, such as `Wholesale Gold`, can't be
+filtered on. Whatever lets merchants define tiers later needs the same rule,
+or proper quoting.
+
+### No tier sends an empty search string
+
+The verified query declares `$query: String!` — required — so "all customers"
+can't just leave it out; it sends `""`.
+
+**Confirmed on the dev store:** `""` returned 8 customers with no further
+page, and `tag:wholesale-gold` returned exactly Priya Sharma and Rohan Mehta.
+Cursor pagination too: at 3 per page, following `endCursor` gave pages of 3,
+3 and 2 — all 8 customers, none repeated.
+
+### First live refresh, and the token prefix was wrong
+
+The checkpoint's first call found the access token a day past its expiry and
+refreshed it at 03:52 UTC on 22 Sep. Afterwards the row held a new access
+token expiring an hour later, and a refresh-token expiry moved to 90 days from
+the refresh (21 Dec, up from 20 Dec). Both customer queries then succeeded
+with the new token. Measured by decrypting the row, not assumed.
+
+**Correction to the 21 Sep entry:** it says offline tokens begin `shpat_`
+whichever grant produced them. That came from the docs. The token that came
+back from the refresh begins `shpua_`. Nothing in the code checks the prefix,
+so nothing broke — but the claim was wrong, at least for refreshed tokens.
+
+Also worth knowing: the token columns are encrypted with a fresh random IV on
+every save, so a database viewer shows the same kind of noise before and
+after a refresh. The only way to see that a token changed is to decrypt it.
+
+**Then verified in the browser too**, the same morning. From the app's frame
+in the admin, `fetch('/api/customers?tier=wholesale-gold')` — with no header
+added by hand — returned Priya Sharma and Rohan Mehta. So App Bridge attaches
+the ID token by itself, and the middleware accepts a real Shopify token:
+signature, `aud`, `iss`/`dest` and the store lookup all passed. The server log
+has the matching cost line and no rejection.
+
+Getting there needed the Console pointed at the app's frame, not the admin
+page around it. In Firefox that's the frame picker at the bottom right of the
+Console.
+
+**Still not seen:** App Bridge retrying after a 401 with the retry header
+(see the session-token entry above).
+
+### The entry page only loads App Bridge
+
+`/` now serves a placeholder view with the two tags from Shopify's App Bridge
+migration guide: `<meta name="shopify-api-key">` and the CDN script. It exists
+so the embedded app can issue ID tokens for `/api` calls; the React shell
+replaces its body later.
+
+The client ID in that page is public by design. The secret and the access
+tokens never reach a view.
+
+### Confirmed: no session or cookies on `/api`
+
+`route:list -v` only names the `api` group, which proves nothing. Expanding it
+through the router shows `SubstituteBindings` and `VerifyShopifySessionToken`
+— no `StartSession`, no `PreventRequestForgery`. And `curl` against
+`/api/customers` gets no `Set-Cookie` header, while `/` gets two.
