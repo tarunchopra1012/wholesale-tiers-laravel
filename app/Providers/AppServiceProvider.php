@@ -9,6 +9,9 @@ use Dedoc\Scramble\Scramble;
 use Dedoc\Scramble\Support\Generator\OpenApi;
 use Dedoc\Scramble\Support\Generator\SecurityScheme;
 use Illuminate\Support\ServiceProvider;
+use Illuminate\Foundation\Events\DiagnosingHealth;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Event;
 use RuntimeException;
 
 class AppServiceProvider extends ServiceProvider
@@ -50,6 +53,14 @@ class AppServiceProvider extends ServiceProvider
             ->withDocumentTransformers(function (OpenApi $openApi): void {
                 $openApi->secure(SecurityScheme::http('bearer', 'JWT'));
             });
+
+        // Laravel's built-in /up route fires this event, and answers 500 if
+        // a listener throws. With no listener it answers 200 even when MySQL
+        // is down, so a load balancer would keep sending traffic to a
+        // container that can't serve a single page.
+        Event::listen(DiagnosingHealth::class, function (): void {
+            DB::select('select 1');
+        });    
     }
 
     /**
