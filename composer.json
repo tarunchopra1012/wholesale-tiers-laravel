@@ -8,6 +8,7 @@
     "require": {
         "php": "^8.3",
         "brick/math": "^0.19",
+        "dedoc/scramble": "^0.13.45",
         "firebase/php-jwt": "^7.2",
         "laravel/framework": "^13.17",
         "laravel/tinker": "^3.0"

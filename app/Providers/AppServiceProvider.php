@@ -5,6 +5,9 @@ namespace App\Providers;
 use App\Services\Shopify\OAuthHmacVerifier;
 use App\Services\Shopify\OAuthService;
 use App\Services\Shopify\SessionTokenVerifier;
+use Dedoc\Scramble\Scramble;
+use Dedoc\Scramble\Support\Generator\OpenApi;
+use Dedoc\Scramble\Support\Generator\SecurityScheme;
 use Illuminate\Support\ServiceProvider;
 use RuntimeException;
 
@@ -39,7 +42,14 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
-        //
+        // Scramble reads routes and Form Requests, but not middleware, so it
+        // can't see that VerifyShopifySessionToken guards the whole api
+        // group. This marks every documented endpoint as needing the ID
+        // token as a bearer token.
+        Scramble::configure()
+            ->withDocumentTransformers(function (OpenApi $openApi): void {
+                $openApi->secure(SecurityScheme::http('bearer', 'JWT'));
+            });
     }
 
     /**
