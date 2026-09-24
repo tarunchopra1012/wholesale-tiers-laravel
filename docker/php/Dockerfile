@@ -54,6 +54,7 @@ COPY --from=assets /app/public/build ./public/build
 COPY docker/nginx/default.prod.conf /etc/nginx/http.d/default.conf
 COPY docker/php/supervisord.conf /etc/supervisord.conf
 COPY docker/php/opcache.ini /usr/local/etc/php/conf.d/opcache.ini
+COPY docker/php/fpm-pool.conf /usr/local/etc/php-fpm.d/zz-prod.conf
 COPY docker/entrypoint.sh /usr/local/bin/entrypoint.sh
 
 RUN composer dump-autoload --optimize --no-dev \
