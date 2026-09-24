@@ -1,0 +1,34 @@
+# Keeps the build context to what the image needs. Without this, COPY . .
+# in the prod stage copies the host's files over the clean ones the earlier
+# stages built.
+
+# Secrets. The image reads its config from real environment variables.
+.env
+.env.*
+
+# Built inside the image by the vendor and assets stages. The host's copies
+# hold dev packages and macOS binaries.
+vendor
+node_modules
+public/build
+# Left behind by the Vite dev server. While it exists, Laravel points the
+# page's scripts at localhost:5173 and the frame goes blank.
+public/hot
+
+# Caches and logs from the host. packages.php lists dev-only packages such as
+# Pail, which aren't installed in the image, so a stale copy breaks boot.
+bootstrap/cache/*.php
+storage/logs/*
+storage/framework/cache/data/*
+storage/framework/sessions/*
+storage/framework/views/*
+# Keep the placeholder files, so the empty folders still exist in the image.
+!storage/**/.gitignore
+
+# Not needed at run time.
+.git
+.claude
+.idea
+.vscode
+tests
+.phpunit.cache
