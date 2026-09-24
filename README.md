@@ -159,6 +159,19 @@ Run artisan inside the container, not on the host:
 docker compose exec app php artisan <command>
 ```
 
+### API docs
+
+Every `/api` endpoint is listed at
+[localhost:8000/docs/api](http://localhost:8000/docs/api), and the raw
+OpenAPI spec is at `/docs/api.json`. [Scramble](https://scramble.dedoc.co)
+builds both from the routes, Form Requests and API Resources, so there are no
+annotations to keep in step with the code: change a rule or a resource and the
+docs change with it.
+
+The page only opens when `APP_ENV=local`. It is for reading: "Send request"
+needs an ID token, which only the Shopify admin can supply, and it expires in
+about a minute.
+
 ### Installing on a development store
 
 Shopify has to reach the app over HTTPS, so expose it with a tunnel:
