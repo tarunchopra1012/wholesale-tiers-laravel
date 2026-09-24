@@ -34,8 +34,18 @@ RUN npm run build
 # ---------- prod: the image you push to ECR ----------
 FROM base AS prod
 
+# nginx writes to files by default. Pointing those at stdout/stderr puts its
+# logs where `docker logs` (and later CloudWatch) can see them.
 RUN apk add --no-cache nginx supervisor \
- && mkdir -p /run/nginx
+ && mkdir -p /run/nginx \
+ && ln -sf /dev/stdout /var/log/nginx/access.log \
+ && ln -sf /dev/stderr /var/log/nginx/error.log
+
+# Defaults only; `docker run -e` or the task definition can override either.
+# config/database.php falls back to sqlite, and a log file inside a container
+# is lost when the container goes.
+ENV DB_CONNECTION=mysql \
+    LOG_CHANNEL=stderr
 
 COPY --from=vendor /var/www/html/vendor ./vendor
 COPY . .
@@ -44,12 +54,17 @@ COPY --from=assets /app/public/build ./public/build
 COPY docker/nginx/default.prod.conf /etc/nginx/http.d/default.conf
 COPY docker/php/supervisord.conf /etc/supervisord.conf
 COPY docker/php/opcache.ini /usr/local/etc/php/conf.d/opcache.ini
+COPY docker/entrypoint.sh /usr/local/bin/entrypoint.sh
 
 RUN composer dump-autoload --optimize --no-dev \
- && chown -R www-data:www-data storage bootstrap/cache
+ && chown -R www-data:www-data storage bootstrap/cache \
+ && chmod +x /usr/local/bin/entrypoint.sh
 
 EXPOSE 80
-HEALTHCHECK --interval=30s --timeout=3s --start-period=20s \
+# 60s grace, up from 20: start-up can spend up to 60s waiting for MySQL
+# before it migrates.
+HEALTHCHECK --interval=30s --timeout=3s --start-period=60s \
   CMD wget -qO- http://127.0.0.1/up || exit 1
 
+ENTRYPOINT ["entrypoint.sh"]
 CMD ["supervisord", "-c", "/etc/supervisord.conf"]
