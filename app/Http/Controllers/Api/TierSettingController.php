@@ -32,6 +32,8 @@ final class TierSettingController extends Controller
 
     /**
      * POST /api/tiers — add a tier. Answers 201 with the new tier.
+     *
+     * @status 201
      */
     public function store(StoreTierSettingRequest $request): TierSettingResource
     {
