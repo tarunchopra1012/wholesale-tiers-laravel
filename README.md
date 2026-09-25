@@ -9,8 +9,11 @@ tiers to customers by tag and preview the resulting prices.
 > Settings and Price preview, in React and Polaris inside the admin — are in
 > place. A merchant can create, rename and delete tiers, page through their
 > customers, and price any product Shopify's own picker can find. The prices
-> are a preview only: nothing applies them at checkout yet. The roadmap below
-> marks honestly what exists and what doesn't.
+> are a preview only: nothing applies them at checkout yet. The app has also
+> been deployed to AWS — ECS Fargate behind a load balancer and CloudFront,
+> with RDS MySQL — as a time-boxed demo, then deleted to avoid running costs;
+> see [Deployment on AWS](#deployment-on-aws). The roadmap below marks
+> honestly what exists and what doesn't.
 
 ## The problem it solves
 
@@ -42,9 +45,11 @@ sees it. It is a tool inside the merchant's admin.
 | Frontend          | React + Vite                    | 18.x        |
 | UI                | Shopify Polaris                 | latest      |
 | Embedding         | App Bridge (CDN script)         | latest      |
-| Database          | MySQL                           | 8.0         |
+| Database          | MySQL (local) · RDS MySQL (AWS) | 8.0 · 8.4   |
 | Shopify Admin API | GraphQL                         | 2026-07     |
-| Runtime           | Docker Compose                  | —           |
+| Runtime (dev)     | Docker Compose                  | —           |
+| Runtime (prod)    | One container: nginx + PHP-FPM under supervisord | — |
+| Hosting (demo)    | AWS: ECS Fargate (ARM), ALB, CloudFront, RDS, ECR, Parameter Store, CloudWatch Logs | — |
 
 ## Architecture
 
@@ -241,6 +246,88 @@ diagnose:
   another blank frame. Firefox loaded them anyway, so it can look fixed when it
   isn't.
 
+## Deployment on AWS
+
+The production image was deployed to AWS in the Mumbai region (`ap-south-1`)
+as a time-boxed demo, with every resource created by the AWS CLI. It was
+deleted afterwards to avoid running costs, so there is no live URL.
+
+```
+Merchant's browser (Shopify admin iframe)
+  │  https://<distribution>.cloudfront.net
+  ▼
+CloudFront          caching off; every header passed through, incl. Authorization
+  │  HTTP :80
+  ▼
+Application Load Balancer   accepts CloudFront's origin-facing addresses only
+  │  health check: GET /up every 15s
+  ▼
+ECS Fargate task    ARM64, 0.25 vCPU / 0.5 GB, image from ECR
+  │  on start: cache config/routes/views → wait for DB → migrate → nginx + PHP-FPM
+  │  secrets injected from SSM Parameter Store; logs to CloudWatch
+  ▼
+RDS MySQL 8.4       db.t4g.micro, not publicly accessible
+```
+
+### What each piece is for, and why it was chosen
+
+| Piece | Why |
+| --- | --- |
+| **CloudFront** | Shopify requires an `https://` App URL. With no custom domain, CloudFront's default certificate provides it. The managed `CachingDisabled` policy means nothing is stored, so one shop's response can never be served to another; the managed `AllViewer` policy forwards the `Authorization` header that carries the session token |
+| **Load balancer** | Health checks against `/up`, and the standard front of an ECS service. Its security group admits only CloudFront's managed prefix list, so the app can't be reached around CloudFront |
+| **ECS on Fargate, ARM64** | No server to patch. ARM is cheaper per hour, and builds natively on an Apple-silicon Mac |
+| **RDS MySQL 8.4** | A managed database, reachable only from the app's security group. 8.4 rather than 8.0: RDS MySQL 8.0 left standard support on 31 Jul 2026 and now carries an Extended Support surcharge |
+| **SSM Parameter Store** | `APP_KEY`, the DB password and the Shopify credentials are stored encrypted and injected as environment variables at start. The task's IAM role can read `/wholesale-tiers/*` and nothing else. They never appear in the image, the task definition or git |
+| **No NAT gateway** | The task has a public IP to reach Shopify and ECR; its security group still admits only the load balancer. Avoids the NAT gateway's hourly charge |
+
+Security groups chain one layer to the next: CloudFront → load balancer
+(port 80) → app (port 80, from the load balancer's group) → database (port
+3306, from the app's group).
+
+### What the container does on start
+
+`docker/entrypoint.sh` caches config, routes and views (at start, not at
+build, because `config:cache` freezes environment values that only exist at
+run time), waits up to 60 s for the database, runs `migrate --force`, then
+hands over to supervisord. `/up` is Laravel's built-in health route plus a
+listener that runs `select 1`, so the load balancer marks the task unhealthy
+if the database is unreachable.
+
+One code change was needed for AWS: behind CloudFront, the load balancer
+reports each request as `http`, so Laravel would write `http://` asset links
+into an `https` page. `AppServiceProvider` forces the https scheme whenever
+`APP_URL` is `https://`; local runs keep an `http://` `APP_URL` and are
+unaffected.
+
+### Verified on the running stack
+
+- The container's logs showed the six migrations running on the new RDS
+  database, then nginx and PHP-FPM starting.
+- The load balancer's health checks answered `200` every 15 seconds, from
+  two availability zones.
+- `GET /up` through CloudFront answered `200` with `{"status":"up"}` over
+  HTTPS.
+- The page's asset links were `https://` on the CloudFront domain.
+- A direct request to the load balancer timed out: it only accepts
+  CloudFront.
+
+### Honest scope — what a real production setup would add
+
+This was a demo deployment, and it is not production-hardened:
+
+- **Created by hand with the AWS CLI**, not infrastructure as code
+  (Terraform or CDK), and **no CI/CD** — the image was built and pushed from
+  a laptop.
+- **One task, a single-AZ database, automated backups off.**
+- **Migrations run on container start.** Fine for one task; before scaling
+  out they belong in a one-off task.
+- **No custom domain.** A domain with an ACM certificate on the load balancer
+  would remove the need for the https workaround above.
+- **Laravel trusts `X-Forwarded-Proto` from any proxy.** Acceptable here only
+  because the app's security group admits nothing but the load balancer.
+- **The health check queries the database.** Right for one container; with
+  many, a brief database problem would fail every task at the same moment.
+
 ## Roadmap
 
 Built:
@@ -269,10 +356,18 @@ Built:
   and deleted, with the delete confirmed first
 - [x] Price preview — choose any product with Shopify's own picker, see its
   base price and each tier's price
+- [x] API docs — generated OpenAPI at `/docs/api` with Scramble, local only
+- [x] Production image — `.dockerignore`, a start-up entrypoint (cache,
+  wait for the database, migrate), a `/up` health check that includes the
+  database, logs to stdout
+- [x] Deployed to AWS as a demo — ECS Fargate, ALB, CloudFront, RDS MySQL
+  8.4, Parameter Store — then deleted (see
+  [Deployment on AWS](#deployment-on-aws))
 
 Not built yet:
 
-- [ ] Containerised deployment behind a real HTTPS domain
+- [ ] Infrastructure as code and a CI/CD pipeline for the AWS deployment
+- [ ] A custom domain with an ACM certificate on the load balancer
 
 ## Deliberately out of scope
 
