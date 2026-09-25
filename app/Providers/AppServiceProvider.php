@@ -12,6 +12,7 @@ use Illuminate\Support\ServiceProvider;
 use Illuminate\Foundation\Events\DiagnosingHealth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
+use Illuminate\Support\Facades\URL;
 use RuntimeException;
 
 class AppServiceProvider extends ServiceProvider
@@ -60,7 +61,17 @@ class AppServiceProvider extends ServiceProvider
         // container that can't serve a single page.
         Event::listen(DiagnosingHealth::class, function (): void {
             DB::select('select 1');
-        });    
+        });
+
+        // On AWS, CloudFront ends HTTPS and reaches the load balancer over
+        // plain HTTP, so the load balancer tells Laravel the request was
+        // http. Laravel would then write http:// script links into an https
+        // page, and the browser blocks them. When the public URL is https,
+        // every generated URL is https too. A local run keeps an http://
+        // APP_URL and is unaffected.
+        if (str_starts_with((string) config('app.url'), 'https://')) {
+            URL::forceScheme('https');
+        }
     }
 
     /**
