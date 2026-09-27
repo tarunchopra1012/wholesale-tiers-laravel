@@ -234,3 +234,41 @@ if [[ -n "$CF_ID" ]]; then
 else
   ok "distribution: none"
 fi
+
+
+# ---------- prove nothing is left ----------
+
+step "Checking nothing named $NAME is left"
+
+# Each check adds a line to LEFT if the thing still exists.
+LEFT=""
+left() { LEFT="${LEFT}"$'\n'"    - $1"; }
+
+[[ "$(aws ecs describe-clusters --clusters "$NAME" --query 'clusters[0].status' \
+    --output text 2>/dev/null || true)" != "ACTIVE" ]] || left "ECS cluster $NAME"
+[[ "$(aws cloudfront list-distributions \
+    --query "DistributionList.Items[?Comment=='$NAME'].Id | [0]" --output text)" != E* ]] \
+  || left "CloudFront distribution with comment $NAME"
+quiet aws elbv2 describe-load-balancers --names "$NAME" && left "load balancer $NAME"
+quiet aws elbv2 describe-target-groups --names "$NAME" && left "target group $NAME"
+quiet aws rds describe-db-instances --db-instance-identifier "$DB_ID" && left "database $DB_ID"
+quiet aws ecr describe-repositories --repository-names "$NAME" && left "image store $NAME"
+[[ "$(aws logs describe-log-groups --log-group-name-prefix "$LOG_GROUP" \
+    --query "logGroups[?logGroupName=='$LOG_GROUP'].logGroupName | [0]" --output text)" \
+    != "$LOG_GROUP" ]] || left "log group $LOG_GROUP"
+[[ -z "$(aws ssm get-parameters-by-path --path "$PARAM_PATH" \
+    --query 'Parameters[].Name' --output text | grep -v '^None$' || true)" ]] \
+  || left "parameters under $PARAM_PATH"
+quiet aws iam get-role --role-name "$ROLE_NAME" && left "IAM role $ROLE_NAME"
+for SG in "${NAME}-alb" "${NAME}-app" "${NAME}-db"; do
+  [[ -z "$(find_sg "$SG")" ]] || left "security group $SG"
+done
+
+if [[ -z "$LEFT" ]]; then
+  ok "nothing left: $NAME is fully deleted"
+  ok "If Shopify pointed at this deployment, release a Dev Dashboard version"
+  ok "with your tunnel URL again."
+else
+  die "still there:$LEFT
+Run teardown again, or remove these in the AWS console."
+fi
