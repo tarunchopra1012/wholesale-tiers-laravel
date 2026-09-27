@@ -34,7 +34,11 @@ docker info >/dev/null 2>&1 || die "Docker Desktop isn't running"
 # out of the image: editing these scripts can't change what gets deployed.
 [[ -z "$(git status --porcelain --untracked-files=no -- . ':(exclude)deploy')" ]] \
   || die "uncommitted changes - commit or stash them, so the image matches a commit"
-GIT_SHA="$(git rev-parse --short HEAD)"
+
+# Tag the image with the last commit that changed the app, not the scripts.
+# deploy/ is kept out of the image, so script commits shouldn't rebuild it.
+GIT_SHA="$(git log -1 --format=%h -- . ':(exclude)deploy')"
+
 ok "Code: $(git branch --show-current) at $GIT_SHA"
 
 # Shopify settings come from the local .env: same app, new URL.
@@ -325,3 +329,158 @@ APP_URL="https://$(aws cloudfront get-distribution --id "$CF_ID" \
   --query 'Distribution.DomainName' --output text)"
 ok "distribution $CF_ID"
 ok "public address: $APP_URL"
+
+
+# ---------- wait for the database ----------
+
+step "Waiting for the database (up to ~10 minutes on a first run)"
+
+aws rds wait db-instance-available --db-instance-identifier "$DB_ID"
+DB_HOST="$(aws rds describe-db-instances --db-instance-identifier "$DB_ID" \
+  --query 'DBInstances[0].Endpoint.Address' --output text)"
+expect "$DB_HOST" "$DB_ID." "couldn't read the database's address"
+ok "database ready at $DB_HOST"
+
+# ---------- task definition: the recipe for running the container ----------
+
+step "Task definition"
+
+TASK_DEF_ARN="$(aws ecs register-task-definition \
+  --query 'taskDefinition.taskDefinitionArn' --output text \
+  --cli-input-json "$(jq -nc \
+    --arg name "$NAME" \
+    --arg image "$IMAGE" \
+    --arg exec "$EXEC_ROLE_ARN" \
+    --arg region "$AWS_REGION" \
+    --arg url "$APP_URL" \
+    --arg dbhost "$DB_HOST" \
+    --arg dbname "$DB_NAME" \
+    --arg scopes "$SHOPIFY_SCOPES" \
+    --arg logs "$LOG_GROUP" \
+    --arg p "arn:aws:ssm:${AWS_REGION}:${ACCOUNT_ID}:parameter${PARAM_PATH}" \
+    '{
+      family: $name,
+      networkMode: "awsvpc",
+      requiresCompatibilities: ["FARGATE"],
+      cpu: "256",
+      memory: "512",
+      runtimePlatform: {cpuArchitecture: "ARM64", operatingSystemFamily: "LINUX"},
+      executionRoleArn: $exec,
+      containerDefinitions: [{
+        name: "app",
+        image: $image,
+        essential: true,
+        portMappings: [{containerPort: 80, protocol: "tcp"}],
+        environment: [
+          {name: "APP_URL", value: $url},
+          {name: "SHOPIFY_APP_URL", value: $url},
+          {name: "SHOPIFY_SCOPES", value: $scopes},
+          {name: "DB_HOST", value: $dbhost},
+          {name: "DB_DATABASE", value: $dbname},
+          {name: "DB_USERNAME", value: "laravel"}
+        ],
+        secrets: [
+          {name: "APP_KEY", valueFrom: ($p + "/APP_KEY")},
+          {name: "DB_PASSWORD", valueFrom: ($p + "/DB_PASSWORD")},
+          {name: "SHOPIFY_API_KEY", valueFrom: ($p + "/SHOPIFY_API_KEY")},
+          {name: "SHOPIFY_API_SECRET", valueFrom: ($p + "/SHOPIFY_API_SECRET")}
+        ],
+        logConfiguration: {
+          logDriver: "awslogs",
+          options: {
+            "awslogs-group": $logs,
+            "awslogs-region": $region,
+            "awslogs-stream-prefix": "app"
+          }
+        }
+      }]
+    }')")"
+expect "$TASK_DEF_ARN" arn: "couldn't register the task definition"
+ok "registered ${TASK_DEF_ARN##*/}"
+
+# ---------- cluster and service ----------
+
+step "ECS cluster and service - the container adds about \$0.015/hour"
+
+[[ "$(aws ecs describe-clusters --clusters "$NAME" --query 'clusters[0].status' \
+    --output text 2>/dev/null || true)" == "ACTIVE" ]] \
+  || aws ecs create-cluster --cluster-name "$NAME" >/dev/null
+ok "cluster $NAME"
+
+SERVICE_STATUS="$(aws ecs describe-services --cluster "$NAME" --services "$NAME" \
+  --query 'services[0].status' --output text 2>/dev/null || true)"
+if [[ "$SERVICE_STATUS" == "ACTIVE" ]]; then
+  # A re-run is a redeploy: new containers start and pass their health checks
+  # before the old ones stop, so the app stays up throughout.
+  aws ecs update-service --cluster "$NAME" --service "$NAME" \
+    --task-definition "$TASK_DEF_ARN" --desired-count 1 >/dev/null
+  ok "service $NAME updated to ${TASK_DEF_ARN##*/}"
+elif [[ "$SERVICE_STATUS" == "DRAINING" ]]; then
+  die "service $NAME is still being deleted - let teardown finish, then run again"
+else
+  # The circuit breaker stops a deployment whose containers keep failing,
+  # instead of restarting them forever (and billing for it).
+  aws ecs create-service --cluster "$NAME" --service-name "$NAME" \
+    --task-definition "$TASK_DEF_ARN" --desired-count 1 --launch-type FARGATE \
+    --network-configuration "awsvpcConfiguration={subnets=[$SUBNETS_CSV],securityGroups=[$APP_SG],assignPublicIp=ENABLED}" \
+    --load-balancers "targetGroupArn=$TG_ARN,containerName=app,containerPort=80" \
+    --health-check-grace-period-seconds 120 \
+    --deployment-configuration "deploymentCircuitBreaker={enable=true,rollback=true}" \
+    >/dev/null
+  ok "service $NAME created"
+fi
+
+# ---------- wait until it's healthy ----------
+
+step "Waiting for the app to pass its health checks (3-5 minutes)"
+
+# Checked by hand rather than with "aws ecs wait services-stable", which failed
+# on a healthy service on 25 Sep.
+for TRY in $(seq 1 40); do
+  HEALTHY="$(aws elbv2 describe-target-health --target-group-arn "$TG_ARN" \
+    --query "length(TargetHealthDescriptions[?TargetHealth.State=='healthy'])" --output text)"
+  ROLLOUT="$(aws ecs describe-services --cluster "$NAME" --services "$NAME" \
+    --query 'services[0].deployments[?status==`PRIMARY`].rolloutState | [0]' --output text)"
+  [[ "$HEALTHY" -ge 1 && "$ROLLOUT" == "COMPLETED" ]] && break
+  [[ "$ROLLOUT" != "FAILED" ]] \
+    || die "the deployment failed - see: aws logs tail $LOG_GROUP --since 15m"
+  [[ $TRY -lt 40 ]] \
+    || die "not healthy after 10 minutes - see: aws logs tail $LOG_GROUP --since 15m"
+  sleep 15
+done
+ok "healthy behind the load balancer"
+
+# ---------- check it from outside ----------
+
+step "Waiting for CloudFront to finish spreading (often already done)"
+aws cloudfront wait distribution-deployed --id "$CF_ID"
+
+step "Checking it from outside"
+
+UP="$(curl -s -o /dev/null -w '%{http_code}' -H 'Accept: application/json' "$APP_URL/up")"
+[[ "$UP" == "200" ]] || die "$APP_URL/up answered $UP, not 200"
+ok "$APP_URL/up answers 200"
+
+PAGE="$(curl -s "$APP_URL/")"
+[[ "$PAGE" == *"$APP_URL/build/assets/"* ]] \
+  || die "the page's script links aren't https on $APP_URL"
+ok "script links are https on the CloudFront address"
+
+DIRECT="$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 "http://$ALB_DNS/up" || true)"
+[[ "$DIRECT" == "000" ]] \
+  || die "the load balancer answered directly ($DIRECT) - it should accept CloudFront only"
+ok "the load balancer can't be reached around CloudFront"
+
+cat <<EOF
+
+Deployed: $APP_URL
+
+To use it in Shopify, create and release a Dev Dashboard version with:
+  App URL:               $APP_URL
+  Allowed redirect URL:  $APP_URL/auth/callback
+then install from a normal browser tab:
+  $APP_URL/auth?shop=<your-store>.myshopify.com
+
+Logs:      aws logs tail $LOG_GROUP --follow
+Tear down: deploy/aws/teardown.sh $NAME   (about \$0.07/hour until you do)
+EOF
