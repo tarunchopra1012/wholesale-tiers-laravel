@@ -29,6 +29,11 @@ find_sg() {
     --query 'SecurityGroups[0].GroupId' --output text | grep -v '^None$' || true
 }
 
+
+# Runs a command with its output thrown away. Used as a yes/no check:
+# "does this exist?"
+quiet() { "$@" >/dev/null 2>&1; }
+
 # ---------- name and region ----------
 
 NAME="${1:-}"

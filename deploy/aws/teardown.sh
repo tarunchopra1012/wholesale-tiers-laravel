@@ -23,7 +23,7 @@ expect "$VPC_ID" vpc- "no default VPC in $AWS_REGION"
 
 # Runs a command with its output thrown away. Used as a yes/no check:
 # "does this exist?"
-quiet() { "$@" >/dev/null 2>&1; }
+# quiet() { "$@" >/dev/null 2>&1; }
 
 # ---------- the app: ECS service, cluster, task definitions ----------
 
