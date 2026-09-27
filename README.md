@@ -357,8 +357,7 @@ unaffected.
   and a teardown that, after one re-run, ended with nothing named
   `wholesale-tiers` left.
 
-<details>
-<summary>Terminal output from the 27 Sep run</summary>
+#### Terminal output from the 27 Sep run
 
 **`deploy.sh` run against a stack that already existed:** every resource
 found and reused, the image not rebuilt, the service moved to task
@@ -375,8 +374,6 @@ group, so this one starts with those as `none`.
 ![teardown.sh re-run, part 1: everything deleted in dependency order](screenshots/2026-09-27-teardown-1.png)
 
 ![teardown.sh re-run, part 2: nothing named wholesale-tiers left](screenshots/2026-09-27-teardown-2.png)
-
-</details>
 
 ### Honest scope — what a real production setup would add
 
