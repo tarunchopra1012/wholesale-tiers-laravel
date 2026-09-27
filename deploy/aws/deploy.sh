@@ -153,3 +153,87 @@ put_param_once SHOPIFY_API_SECRET SecureString "$SHOPIFY_API_SECRET"
 DB_PASSWORD="$(aws ssm get-parameter --name "$PARAM_PATH/DB_PASSWORD" \
   --with-decryption --query Parameter.Value --output text)"
 [[ ${#DB_PASSWORD} -ge 16 ]] || die "couldn't read the database password back"
+
+
+# ---------- database (billing starts here) ----------
+
+step "Database - billing starts here, about \$0.02/hour"
+
+DB_STATUS="$(aws rds describe-db-instances --db-instance-identifier "$DB_ID" \
+  --query 'DBInstances[0].DBInstanceStatus' --output text 2>/dev/null || true)"
+if [[ -z "$DB_STATUS" ]]; then
+  # Never 8.0: since 1 Aug 2026 RDS adds an Extended Support charge to it.
+  MYSQL_VERSION="$(aws rds describe-db-engine-versions --engine mysql \
+    --query "DBEngineVersions[?starts_with(EngineVersion,'8.4.')].EngineVersion | [-1]" \
+    --output text)"
+  expect "$MYSQL_VERSION" 8.4. "RDS offers no MySQL 8.4 in $AWS_REGION"
+  aws rds create-db-instance \
+    --db-instance-identifier "$DB_ID" \
+    --engine mysql --engine-version "$MYSQL_VERSION" \
+    --engine-lifecycle-support open-source-rds-extended-support-disabled \
+    --db-instance-class db.t4g.micro \
+    --allocated-storage 20 --storage-type gp3 \
+    --master-username laravel --master-user-password "$DB_PASSWORD" \
+    --db-name "$DB_NAME" \
+    --vpc-security-group-ids "$DB_SG" \
+    --no-publicly-accessible --no-multi-az \
+    --backup-retention-period 0 \
+    --no-deletion-protection >/dev/null
+  ok "database $DB_ID creating, MySQL $MYSQL_VERSION (about 10 minutes; carrying on meanwhile)"
+elif [[ "$DB_STATUS" == "deleting" ]]; then
+  die "database $DB_ID is still being deleted - let teardown finish, then run again"
+else
+  ok "database $DB_ID already exists ($DB_STATUS)"
+fi
+
+# ---------- image ----------
+
+step "Image"
+
+quiet aws ecr describe-repositories --repository-names "$NAME" \
+  || aws ecr create-repository --repository-name "$NAME" >/dev/null
+REGISTRY="${ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com"
+IMAGE="${REGISTRY}/${NAME}:${GIT_SHA}"
+aws ecr get-login-password | docker login --username AWS --password-stdin "$REGISTRY" >/dev/null
+
+# The tag is the commit, so an image already pushed for it is the same image.
+if quiet aws ecr describe-images --repository-name "$NAME" --image-ids imageTag="$GIT_SHA"; then
+  ok "image $NAME:$GIT_SHA already in ECR"
+else
+  ok "building $NAME:$GIT_SHA for ARM64 (a few minutes on a cold build)"
+  docker build --quiet --platform linux/arm64 --target prod \
+    -t "$IMAGE" -f docker/php/Dockerfile . >/dev/null
+  docker push "$IMAGE" >/dev/null
+  ok "pushed $IMAGE"
+fi
+
+# ---------- IAM role for ECS ----------
+
+step "IAM role for ECS"
+
+if ! quiet aws iam get-role --role-name "$ROLE_NAME"; then
+  aws iam create-role --role-name "$ROLE_NAME" --assume-role-policy-document \
+    '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"Service":"ecs-tasks.amazonaws.com"},"Action":"sts:AssumeRole"}]}' \
+    >/dev/null
+fi
+# Both are safe to repeat: attaching the same policy twice, or putting the
+# same inline policy again, changes nothing.
+aws iam attach-role-policy --role-name "$ROLE_NAME" \
+  --policy-arn arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy
+aws iam put-role-policy --role-name "$ROLE_NAME" --policy-name read-own-parameters \
+  --policy-document "$(jq -nc \
+    --arg r "arn:aws:ssm:${AWS_REGION}:${ACCOUNT_ID}:parameter${PARAM_PATH}/*" \
+    '{Version:"2012-10-17",Statement:[{Effect:"Allow",Action:"ssm:GetParameters",Resource:$r}]}')"
+EXEC_ROLE_ARN="$(aws iam get-role --role-name "$ROLE_NAME" --query Role.Arn --output text)"
+expect "$EXEC_ROLE_ARN" arn:aws:iam:: "couldn't read back role $ROLE_NAME"
+ok "role $ROLE_NAME: pull the image, write logs, read ${PARAM_PATH}/*"
+
+# ---------- log group ----------
+
+step "Log group"
+
+LOG_FOUND="$(aws logs describe-log-groups --log-group-name-prefix "$LOG_GROUP" \
+  --query "logGroups[?logGroupName=='$LOG_GROUP'].logGroupName | [0]" --output text)"
+[[ "$LOG_FOUND" == "$LOG_GROUP" ]] || aws logs create-log-group --log-group-name "$LOG_GROUP"
+aws logs put-retention-policy --log-group-name "$LOG_GROUP" --retention-in-days 1
+ok "$LOG_GROUP, kept for 1 day"
