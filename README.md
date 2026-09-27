@@ -3,6 +3,8 @@
 An embedded Shopify admin app that lets a merchant assign wholesale discount
 tiers to customers by tag and preview the resulting prices.
 
+**Video walkthrough:** [Building a Shopify Wholesale Tier App POC](https://www.loom.com/share/5871db562af4475d8b162db5a70f9d1b) (Loom)
+
 > **Status: early.** The development environment, the Laravel scaffold, the
 > database layer, the OAuth install flow, session-token verification, the
 > pricing logic with its unit tests, and all three pages — Customers,
