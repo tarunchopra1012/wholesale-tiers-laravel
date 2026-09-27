@@ -32,3 +32,4 @@ storage/framework/views/*
 .vscode
 tests
 .phpunit.cache
+deploy

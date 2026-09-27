@@ -69,8 +69,9 @@ ok "AWS account: ****${ACCOUNT_ID: -4}"
 docker info >/dev/null 2>&1 || die "Docker Desktop isn't running"
 
 # The image is built from the folder, so it has to match a commit exactly.
-# Untracked files are ignored here; changed tracked files are not.
-[[ -z "$(git status --porcelain --untracked-files=no)" ]] \
+# Untracked files are ignored, and so is deploy/, which .dockerignore keeps
+# out of the image: editing these scripts can't change what gets deployed.
+[[ -z "$(git status --porcelain --untracked-files=no -- . ':(exclude)deploy')" ]] \
   || die "uncommitted changes - commit or stash them, so the image matches a commit"
 GIT_SHA="$(git rev-parse --short HEAD)"
 ok "Code: $(git branch --show-current) at $GIT_SHA"
