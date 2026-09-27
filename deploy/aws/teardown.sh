@@ -20,11 +20,6 @@ VPC_ID="$(aws ec2 describe-vpcs --filters Name=is-default,Values=true \
   --query 'Vpcs[0].VpcId' --output text)"
 expect "$VPC_ID" vpc- "no default VPC in $AWS_REGION"
 
-
-# Runs a command with its output thrown away. Used as a yes/no check:
-# "does this exist?"
-# quiet() { "$@" >/dev/null 2>&1; }
-
 # ---------- the app: ECS service, cluster, task definitions ----------
 
 step "ECS service, cluster and task definitions"
