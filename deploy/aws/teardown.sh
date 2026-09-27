@@ -31,6 +31,7 @@ if [[ "$SERVICE_STATUS" == "ACTIVE" ]]; then
   aws ecs delete-service --cluster "$NAME" --service "$NAME" --force >/dev/null
 fi
 if [[ "$SERVICE_STATUS" == "ACTIVE" || "$SERVICE_STATUS" == "DRAINING" ]]; then
+  ok "waiting for its containers to stop (usually 2-5 minutes)"
   aws ecs wait services-inactive --cluster "$NAME" --services "$NAME"
   ok "service $NAME deleted"
 else
@@ -96,7 +97,15 @@ fi
 TG_ARN="$(aws elbv2 describe-target-groups --names "$NAME" \
   --query 'TargetGroups[0].TargetGroupArn' --output text 2>/dev/null || true)"
 if [[ "$TG_ARN" == arn:* ]]; then
-  aws elbv2 delete-target-group --target-group-arn "$TG_ARN"
+  # For a few seconds after its load balancer is deleted, AWS can still see
+  # the listener and refuses. Retry every 10 seconds, for up to 2 minutes.
+  TRY=0
+  until aws elbv2 delete-target-group --target-group-arn "$TG_ARN" 2>/dev/null; do
+    TRY=$((TRY + 1))
+    [[ $TRY -lt 12 ]] \
+      || die "target group $NAME was still in use after 2 minutes - run teardown again"
+    sleep 10
+  done
   ok "target group $NAME deleted"
 else
   ok "target group: none"
