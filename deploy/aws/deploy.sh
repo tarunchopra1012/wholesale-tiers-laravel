@@ -237,3 +237,91 @@ LOG_FOUND="$(aws logs describe-log-groups --log-group-name-prefix "$LOG_GROUP" \
 [[ "$LOG_FOUND" == "$LOG_GROUP" ]] || aws logs create-log-group --log-group-name "$LOG_GROUP"
 aws logs put-retention-policy --log-group-name "$LOG_GROUP" --retention-in-days 1
 ok "$LOG_GROUP, kept for 1 day"
+
+
+# ---------- load balancer ----------
+
+step "Load balancer - about \$0.035/hour with its public IPs"
+
+ALB_ARN="$(aws elbv2 describe-load-balancers --names "$NAME" \
+  --query 'LoadBalancers[0].LoadBalancerArn' --output text 2>/dev/null || true)"
+if [[ "$ALB_ARN" != arn:* ]]; then
+  ALB_ARN="$(aws elbv2 create-load-balancer --name "$NAME" --type application \
+    --scheme internet-facing --subnets "$SUBNETS_JSON" --security-groups "$ALB_SG" \
+    --query 'LoadBalancers[0].LoadBalancerArn' --output text)"
+fi
+expect "$ALB_ARN" arn: "couldn't create load balancer $NAME"
+ALB_DNS="$(aws elbv2 describe-load-balancers --load-balancer-arns "$ALB_ARN" \
+  --query 'LoadBalancers[0].DNSName' --output text)"
+ok "load balancer $ALB_DNS"
+
+TG_ARN="$(aws elbv2 describe-target-groups --names "$NAME" \
+  --query 'TargetGroups[0].TargetGroupArn' --output text 2>/dev/null || true)"
+if [[ "$TG_ARN" != arn:* ]]; then
+  TG_ARN="$(aws elbv2 create-target-group --name "$NAME" --protocol HTTP --port 80 \
+    --vpc-id "$VPC_ID" --target-type ip --health-check-path /up \
+    --health-check-interval-seconds 15 --healthy-threshold-count 2 --matcher HttpCode=200 \
+    --query 'TargetGroups[0].TargetGroupArn' --output text)"
+fi
+expect "$TG_ARN" arn: "couldn't create target group $NAME"
+aws elbv2 modify-target-group-attributes --target-group-arn "$TG_ARN" \
+  --attributes Key=deregistration_delay.timeout_seconds,Value=30 >/dev/null
+ok "target group $NAME: GET /up every 15s"
+
+LISTENERS="$(aws elbv2 describe-listeners --load-balancer-arn "$ALB_ARN" \
+  --query 'length(Listeners)' --output text)"
+if [[ "$LISTENERS" == "0" ]]; then
+  aws elbv2 create-listener --load-balancer-arn "$ALB_ARN" --protocol HTTP --port 80 \
+    --default-actions Type=forward,TargetGroupArn="$TG_ARN" >/dev/null
+fi
+ok "listener: port 80 -> target group"
+
+# ---------- CloudFront: the https address ----------
+
+step "CloudFront"
+
+# teardown.sh finds the distribution by this Comment, so it must be exactly NAME.
+CF_ID="$(aws cloudfront list-distributions \
+  --query "DistributionList.Items[?Comment=='$NAME'].Id | [0]" --output text)"
+if [[ "$CF_ID" == E* ]]; then
+  # A switched-off one means a teardown stopped halfway. Reusing it would
+  # leave the app unreachable.
+  [[ "$(aws cloudfront get-distribution --id "$CF_ID" \
+      --query 'Distribution.DistributionConfig.Enabled' --output text)" == "True" ]] \
+    || die "distribution $CF_ID is switched off - finish teardown.sh first, then deploy again"
+else
+  CF_ID="$(aws cloudfront create-distribution --query 'Distribution.Id' --output text \
+    --distribution-config "$(jq -nc --arg dns "$ALB_DNS" --arg name "$NAME" \
+      --arg ref "$NAME-$(date +%s)" '{
+      CallerReference: $ref,
+      Comment: $name,
+      Enabled: true,
+      PriceClass: "PriceClass_200",
+      Origins: {Quantity: 1, Items: [{
+        Id: "alb",
+        DomainName: $dns,
+        CustomOriginConfig: {
+          HTTPPort: 80, HTTPSPort: 443,
+          OriginProtocolPolicy: "http-only",
+          OriginSslProtocols: {Quantity: 1, Items: ["TLSv1.2"]},
+          OriginReadTimeout: 30, OriginKeepaliveTimeout: 5
+        }
+      }]},
+      DefaultCacheBehavior: {
+        TargetOriginId: "alb",
+        ViewerProtocolPolicy: "redirect-to-https",
+        AllowedMethods: {
+          Quantity: 7, Items: ["GET","HEAD","OPTIONS","PUT","POST","PATCH","DELETE"],
+          CachedMethods: {Quantity: 2, Items: ["GET","HEAD"]}
+        },
+        CachePolicyId: "4135ea2d-6df8-44a3-9df3-4b5a84be39ad",
+        OriginRequestPolicyId: "216adef6-5c7f-47e4-b989-5492eafa07d3",
+        Compress: true
+      }
+    }')")"
+fi
+expect "$CF_ID" E "couldn't create the CloudFront distribution"
+APP_URL="https://$(aws cloudfront get-distribution --id "$CF_ID" \
+  --query 'Distribution.DomainName' --output text)"
+ok "distribution $CF_ID"
+ok "public address: $APP_URL"
