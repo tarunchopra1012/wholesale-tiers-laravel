@@ -248,9 +248,10 @@ diagnose:
 
 ## Deployment on AWS
 
-The production image was deployed to AWS in the Mumbai region (`ap-south-1`)
-as a time-boxed demo, with every resource created by the AWS CLI. It was
-deleted afterwards to avoid running costs, so there is no live URL.
+The production image is deployed to AWS in the Mumbai region (`ap-south-1`)
+as a time-boxed demo. Two scripts in `deploy/aws/` create the whole stack and
+delete it again, and it is deleted after each demo to avoid running costs, so
+there is no live URL.
 
 ```
 Merchant's browser (Shopify admin iframe)
@@ -269,6 +270,47 @@ ECS Fargate task    ARM64, 0.25 vCPU / 0.5 GB, image from ECR
 RDS MySQL 8.4       db.t4g.micro, not publicly accessible
 ```
 
+### Deploying and tearing down
+
+```bash
+deploy/aws/deploy.sh [name]      # asks for a name (default wholesale-tiers) and a region (default ap-south-1)
+deploy/aws/teardown.sh [name]    # asks you to type the name back before deleting anything
+```
+
+They need the AWS CLI v2 signed in with administrator rights, Docker and
+`jq`, and they run from the repository root. The Shopify key, secret and
+scopes come from `.env`; the app key and the database password are generated
+and kept in Parameter Store. The scripts are written for the bash 3.2 that
+macOS ships.
+
+**`deploy.sh`** checks the tools, the AWS login and that the app's code is
+committed, then asks for `yes` before creating anything that costs money. It
+creates the security groups, parameters, database, image, IAM role, log
+group, load balancer, CloudFront distribution and ECS service, waits until
+the load balancer sees a healthy task, and finishes with three checks from
+outside: `/up` answers `200` over https, the page's script links are
+`https://` on the CloudFront address, and the load balancer can't be reached
+directly.
+
+- **Every resource is named from the one name**, so the two scripts always
+  agree on what belongs to a deployment.
+- **Each step looks before it creates.** A run that failed halfway carries on
+  where it stopped; a run against a healthy stack changes nothing but the app.
+- **A re-run is a redeploy.** It registers a new task definition revision and
+  ECS starts the new task, waits for it to pass its health checks, then stops
+  the old one — no downtime. The image is tagged with the last commit outside
+  `deploy/`, so it's only rebuilt when the app changes.
+- **A deployment that keeps failing stops** (ECS's circuit breaker) instead
+  of restarting containers indefinitely.
+
+**`teardown.sh`** finds each resource by its name, deletes them in dependency
+order, skips anything already gone, retries where AWS takes a moment to
+release something, and ends by checking that nothing with that name is left.
+It is safe to run again after an interrupted run.
+
+**Cost:** about $0.07 an hour while the stack exists. The first demo, up for
+about an hour and a half, came to $0.14 on the AWS bill.
+
 ### What each piece is for, and why it was chosen
 
 | Piece | Why |
@@ -277,7 +319,7 @@ RDS MySQL 8.4       db.t4g.micro, not publicly accessible
 | **Load balancer** | Health checks against `/up`, and the standard front of an ECS service. Its security group admits only CloudFront's managed prefix list, so the app can't be reached around CloudFront |
 | **ECS on Fargate, ARM64** | No server to patch. ARM is cheaper per hour, and builds natively on an Apple-silicon Mac |
 | **RDS MySQL 8.4** | A managed database, reachable only from the app's security group. 8.4 rather than 8.0: RDS MySQL 8.0 left standard support on 31 Jul 2026 and now carries an Extended Support surcharge |
-| **SSM Parameter Store** | `APP_KEY`, the DB password and the Shopify credentials are stored encrypted and injected as environment variables at start. The task's IAM role can read `/wholesale-tiers/*` and nothing else. They never appear in the image, the task definition or git |
+| **SSM Parameter Store** | `APP_KEY`, the DB password and the Shopify credentials are stored encrypted and injected as environment variables at start. The task's IAM role can read `/<name>/*` and nothing else. They never appear in the image, the task definition or git |
 | **No NAT gateway** | The task has a public IP to reach Shopify and ECR; its security group still admits only the load balancer. Avoids the NAT gateway's hourly charge |
 
 Security groups chain one layer to the next: CloudFront → load balancer
@@ -310,14 +352,40 @@ unaffected.
 - The page's asset links were `https://` on the CloudFront domain.
 - A direct request to the load balancer timed out: it only accepts
   CloudFront.
+- On 27 Sep the scripts ran the full cycle: a deploy from nothing, a second
+  run that reused every resource and redeployed the app without downtime,
+  and a teardown that, after one re-run, ended with nothing named
+  `wholesale-tiers` left.
+
+<details>
+<summary>Terminal output from the 27 Sep run</summary>
+
+**`deploy.sh` run against a stack that already existed:** every resource
+found and reused, the image not rebuilt, the service moved to task
+definition revision 3, then healthy, then the three outside checks.
+
+![deploy.sh re-run, part 1: checks, security groups, secrets, database, image, role, log group](screenshots/2026-09-27-redeploy-1.png)
+
+![deploy.sh re-run, part 2: load balancer, CloudFront, redeploy to revision 3, health checks and outside checks](screenshots/2026-09-27-redeploy-2.png)
+
+**`teardown.sh`, the re-run that finished the job.** The first run had
+deleted the service, cluster and load balancer, then stopped at the target
+group, so this one starts with those as `none`.
+
+![teardown.sh re-run, part 1: everything deleted in dependency order](screenshots/2026-09-27-teardown-1.png)
+
+![teardown.sh re-run, part 2: nothing named wholesale-tiers left](screenshots/2026-09-27-teardown-2.png)
+
+</details>
 
 ### Honest scope — what a real production setup would add
 
 This was a demo deployment, and it is not production-hardened:
 
-- **Created by hand with the AWS CLI**, not infrastructure as code
-  (Terraform or CDK), and **no CI/CD** — the image was built and pushed from
-  a laptop.
+- **Bash scripts over the AWS CLI, not infrastructure as code** (Terraform or
+  CDK). They find what exists by looking it up by name on every run instead
+  of keeping state, and there's **no CI/CD** — the image is built and pushed
+  from a laptop.
 - **One task, a single-AZ database, automated backups off.**
 - **Migrations run on container start.** Fine for one task; before scaling
   out they belong in a one-off task.
@@ -363,6 +431,9 @@ Built:
 - [x] Deployed to AWS as a demo — ECS Fargate, ALB, CloudFront, RDS MySQL
   8.4, Parameter Store — then deleted (see
   [Deployment on AWS](#deployment-on-aws))
+- [x] One-command deploy and teardown scripts (`deploy/aws/`) — safe to
+  re-run, a re-run redeploys without downtime, and teardown ends by checking
+  nothing is left
 
 Not built yet:
 
