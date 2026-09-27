@@ -175,3 +175,32 @@ DB_SG="$(ensure_sg "${NAME}-db" "DB: MySQL from the app only")"
 expect "$DB_SG" sg- "couldn't create security group ${NAME}-db"
 allow_in --group-id "$DB_SG" --protocol tcp --port 3306 --source-group "$APP_SG"
 ok "${NAME}-db   $DB_SG  port 3306 from the app"
+
+
+# ---------- secrets in Parameter Store ----------
+
+# Stores a parameter only if it isn't there yet. A re-run must never replace
+# the database password the database was created with.
+put_param_once() {
+  local name="$PARAM_PATH/$1"
+  if aws ssm get-parameter --name "$name" >/dev/null 2>&1; then
+    ok "$name  already set"
+  else
+    aws ssm put-parameter --name "$name" --type "$2" --value "$3" >/dev/null \
+      || die "couldn't store $name"
+    ok "$name  stored"
+  fi
+}
+
+step "Secrets"
+
+put_param_once APP_KEY            SecureString "base64:$(openssl rand -base64 32)"
+put_param_once DB_PASSWORD        SecureString "$(openssl rand -base64 24 | tr -d '/+=')"
+put_param_once SHOPIFY_API_KEY    String       "$SHOPIFY_API_KEY"
+put_param_once SHOPIFY_API_SECRET SecureString "$SHOPIFY_API_SECRET"
+
+# The database needs the password in the next section. Read back whatever is
+# stored, which on a re-run is the original, not the new one generated above.
+DB_PASSWORD="$(aws ssm get-parameter --name "$PARAM_PATH/DB_PASSWORD" \
+  --with-decryption --query Parameter.Value --output text)"
+[[ ${#DB_PASSWORD} -ge 16 ]] || die "couldn't read the database password back"
