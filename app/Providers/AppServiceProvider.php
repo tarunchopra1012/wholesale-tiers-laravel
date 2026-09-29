@@ -13,6 +13,7 @@ use Illuminate\Foundation\Events\DiagnosingHealth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\URL;
+use Laravel\Telescope\TelescopeServiceProvider as TelescopePackageServiceProvider;
 use RuntimeException;
 
 class AppServiceProvider extends ServiceProvider
@@ -39,6 +40,14 @@ class AppServiceProvider extends ServiceProvider
             secret: $this->requiredShopifyConfig('api_secret'),
             clientId: $this->requiredShopifyConfig('api_key'),
         ));
+
+        // Telescope is a dev dependency, so the production image doesn't have
+        // it. Registered here, not in bootstrap/providers.php, so it only
+        // loads where it's installed and APP_ENV is local.
+        if ($this->app->environment('local') && class_exists(TelescopePackageServiceProvider::class)) {
+            $this->app->register(TelescopePackageServiceProvider::class);
+            $this->app->register(TelescopeServiceProvider::class);
+        }
     }
 
     /**

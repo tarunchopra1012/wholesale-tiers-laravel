@@ -10,6 +10,7 @@ Route::get('/auth/callback', [ShopifyOAuthController::class, 'callback'])->name(
 // The React app, on every path React Router handles, so a reload on
 // /settings gets the page rather than a 404. Kept last so /auth matches
 // first. /api is excluded so an unknown API path still answers a JSON 404
-// instead of this HTML. /docs is excluded so Scramble's API docs page is
-// never swallowed by it, whichever of the two routes registers first.
-Route::view('/{path?}', 'app')->where('path', '(?!(api|docs)(/|$)).*');
+// instead of this HTML. /docs and /telescope are excluded so Scramble's API
+// docs and the local Telescope dashboard are never swallowed by it, whichever
+// route registers first.
+Route::view('/{path?}', 'app')->where('path', '(?!(api|docs|telescope)(/|$)).*');
