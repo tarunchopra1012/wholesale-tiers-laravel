@@ -6,6 +6,7 @@ services:
       target: dev
     volumes:
       - .:/var/www/html
+      - ./docker/php/xdebug.ini:/usr/local/etc/php/conf.d/zz-xdebug.ini:ro
       # - /var/www/html/vendor
     environment:
       DB_CONNECTION: mysql
