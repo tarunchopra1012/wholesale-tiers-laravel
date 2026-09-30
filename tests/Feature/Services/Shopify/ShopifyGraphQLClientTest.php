@@ -6,6 +6,7 @@ namespace Tests\Feature\Services\Shopify;
 
 use App\Models\Shop;
 use App\Services\Shopify\OAuthService;
+use App\Services\Shopify\ReauthorizationRequiredException;
 use App\Services\Shopify\ShopifyApiException;
 use App\Services\Shopify\ShopifyGraphQLClient;
 use Illuminate\Http\Client\Request;
@@ -60,6 +61,20 @@ final class ShopifyGraphQLClientTest extends TestCase
         }
 
         Http::assertSentCount(3);
+    }
+
+    public function test_a_revoked_token_is_not_retried_and_asks_for_reauthorization(): void
+    {
+        Http::fake(['*' => Http::response('', 401)]);
+
+        try {
+            $this->client()->query('{ shop { name } }');
+            $this->fail('Expected ReauthorizationRequiredException.');
+        } catch (ReauthorizationRequiredException $e) {
+            $this->assertSame('https://app.example.test/auth?shop=example-store.myshopify.com', $e->reauthorizeUrl);
+        }
+
+        Http::assertSentCount(1);
     }
 
     private function client(): ShopifyGraphQLClient

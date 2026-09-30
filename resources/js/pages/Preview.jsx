@@ -12,13 +12,15 @@ import {
 } from '@shopify/polaris';
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { api } from '../lib/api.js';
+import { api, reconnectAction } from '../lib/api.js';
 
 export default function Preview() {
     const navigate = useNavigate();
     // { id, title } of the product being priced, or null before one is known.
     const [product, setProduct] = useState(null);
     const [starting, setStarting] = useState(true);
+    // startError and previewError hold the Error itself, not its message:
+    // either may carry the way to reconnect the store.
     const [startError, setStartError] = useState(null);
     const [pickerError, setPickerError] = useState(null);
     const [preview, setPreview] = useState(null);
@@ -37,7 +39,7 @@ export default function Preview() {
                 if (!ignore) setProduct(body.data[0] ?? null);
             })
             .catch((e) => {
-                if (!ignore) setStartError(e.message);
+                if (!ignore) setStartError(e);
             })
             .finally(() => {
                 if (!ignore) setStarting(false);
@@ -68,7 +70,7 @@ export default function Preview() {
                 if (!ignore) setPreview(body.data);
             })
             .catch((e) => {
-                if (!ignore) setPreviewError(e.message);
+                if (!ignore) setPreviewError(e);
             })
             .finally(() => {
                 if (!ignore) setPreviewLoading(false);
@@ -111,8 +113,12 @@ export default function Preview() {
         >
             <BlockStack gap="400">
                 {startError && (
-                    <Banner tone="critical" title="Couldn't load products">
-                        <p>{startError}</p>
+                    <Banner
+                        tone="critical"
+                        title="Couldn't load products"
+                        action={reconnectAction(startError)}
+                    >
+                        <p>{startError.message}</p>
                     </Banner>
                 )}
                 {pickerError && (
@@ -125,8 +131,12 @@ export default function Preview() {
                     </Banner>
                 )}
                 {previewError && (
-                    <Banner tone="critical" title="Couldn't work out the prices">
-                        <p>{previewError}</p>
+                    <Banner
+                        tone="critical"
+                        title="Couldn't work out the prices"
+                        action={reconnectAction(previewError)}
+                    >
+                        <p>{previewError.message}</p>
                     </Banner>
                 )}
                 <Card padding="0">

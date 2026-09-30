@@ -58,6 +58,19 @@ final readonly class OAuthService
     }
 
     /**
+     * Where to send a merchant whose tokens have died: the start of OAuth,
+     * which issues new ones. Absolute and built from config, like the
+     * redirect URI, because the merchant opens it outside the admin's frame.
+     *
+     * Takes a Shop, not a ShopDomain: the domain is only a query value here,
+     * which route() encodes, and /auth checks it before using it.
+     */
+    public function reauthorizeUrl(Shop $shop): string
+    {
+        return rtrim($this->appUrl, '/').route('auth.install', ['shop' => $shop->shop_domain], absolute: false);
+    }
+
+    /**
      * Trade the one-time code for an expiring offline token and save it.
      *
      * @throws OAuthException when Shopify can't be reached, refuses the code,
@@ -119,9 +132,11 @@ final readonly class OAuthService
      * The shop's access token, refreshed first if it expires within a
      * minute.
      *
-     * @throws OAuthException when the token can't be refreshed. After a 401
-     *                        the refresh token is dead and the merchant has
-     *                        to reinstall.
+     * @throws ReauthorizationRequiredException when Shopify refuses the
+     *                                          refresh token. Only the
+     *                                          merchant can fix that
+     * @throws OAuthException when the refresh fails for any other reason,
+     *                        which the next request may get past
      */
     public function freshAccessToken(Shop $shop): string
     {
@@ -170,6 +185,7 @@ final readonly class OAuthService
     /**
      * Swap the refresh token for a new access token, and save it.
      *
+     * @throws ReauthorizationRequiredException
      * @throws OAuthException
      */
     private function refreshAccessToken(Shop $shop): void
@@ -180,7 +196,10 @@ final readonly class OAuthService
             ?? throw new OAuthException("Stored shop domain {$shop->shop_domain} is not valid.");
 
         if ($shop->refresh_token === null) {
-            throw new OAuthException("{$domain} has no refresh token, so the app must be reinstalled.");
+            throw new ReauthorizationRequiredException(
+                $this->reauthorizeUrl($shop),
+                "{$domain} has an expiring token but no refresh token.",
+            );
         }
 
         try {
@@ -197,14 +216,24 @@ final readonly class OAuthService
             throw new OAuthException("Could not reach {$domain} to refresh its token.", previous: $e);
         }
 
-        // A 401 is final: the refresh token is dead, and retrying won't
-        // revive it.
+        // Shopify answers 401 {"error":"invalid_request"} when the refresh
+        // token has expired or been replaced. That is final: retrying won't
+        // revive it, and Shopify's advice is to send the merchant through
+        // OAuth again.
+        if ($response->status() === 401) {
+            throw new ReauthorizationRequiredException(
+                $this->reauthorizeUrl($shop),
+                "Shopify refused the refresh token for {$domain}.",
+            );
+        }
+
+        // Anything else — a 5xx, say — says nothing about the refresh
+        // token, which may still be fine. The next request tries again.
         if ($response->failed()) {
             throw new OAuthException(sprintf(
-                'Token refresh for %s failed with HTTP %d%s',
+                'Token refresh for %s failed with HTTP %d.',
                 $domain,
                 $response->status(),
-                $response->status() === 401 ? ': the refresh token is no longer valid, so the app must be reinstalled.' : '.',
             ));
         }
 

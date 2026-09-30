@@ -1,9 +1,11 @@
 <?php
 
 use App\Http\Middleware\VerifyShopifySessionToken;
+use App\Services\Shopify\ReauthorizationRequiredException;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
 return Application::configure(basePath: dirname(__DIR__))
@@ -40,4 +42,14 @@ return Application::configure(basePath: dirname(__DIR__))
         $exceptions->shouldRenderJsonWhen(
             fn (Request $request) => $request->is('api/*') || $request->expectsJson(),
         );
+
+        // The shop's tokens are dead, and the merchant is the only one who
+        // can renew them. A 403, not a 500: nothing on the server is broken.
+        // Not a 401 either: that means a bad ID token, and this one was fine.
+        // The exception is still reported, so its technical reason reaches
+        // the log; the merchant gets a plain sentence and the way out.
+        $exceptions->render(fn (ReauthorizationRequiredException $e): JsonResponse => response()->json([
+            'message' => "Shopify no longer accepts this app's connection to your store. Reconnect to continue.",
+            'reauthorize_url' => $e->reauthorizeUrl,
+        ], 403));
     })->create();

@@ -35,6 +35,8 @@ final readonly class ShopifyGraphQLClient
      * @return array<string, mixed>  the response's `data` block
      *
      * @throws ShopifyApiException
+     * @throws ReauthorizationRequiredException when Shopify no longer
+     *                                          accepts this shop's tokens
      * @throws OAuthException when the access token can't be refreshed
      */
     public function query(string $query, array $variables = []): array
@@ -52,6 +54,15 @@ final readonly class ShopifyGraphQLClient
 
         if ($this->isThrottled($response)) {
             throw new ShopifyApiException("Shopify was still throttling requests for {$this->shop->shop_domain} after retrying.");
+        }
+
+        // send() refreshed the token if it was near expiry, so a 401 means
+        // Shopify has revoked it. Sending it again can't help.
+        if ($response->status() === 401) {
+            throw new ReauthorizationRequiredException(
+                $this->oauth->reauthorizeUrl($this->shop),
+                "Shopify rejected the access token for {$this->shop->shop_domain}.",
+            );
         }
 
         if ($response->failed()) {

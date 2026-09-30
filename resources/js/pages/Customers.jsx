@@ -14,7 +14,7 @@ import {
 } from '@shopify/polaris';
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { api } from '../lib/api.js';
+import { api, reconnectAction } from '../lib/api.js';
 
 // No "Retail" option: the API filters by one tag, and untagged customers
 // have none to filter on.
@@ -35,6 +35,8 @@ export default function Customers() {
     const [hasNextPage, setHasNextPage] = useState(false);
     const [endCursor, setEndCursor] = useState(null);
     const [loading, setLoading] = useState(true);
+    // The Error itself, not just its message: it may carry the way to
+    // reconnect the store.
     const [error, setError] = useState(null);
     // The shop's tiers, as the Settings page saved them. They decide both
     // what can be filtered on and which tags get a badge.
@@ -81,7 +83,7 @@ export default function Customers() {
                 setEndCursor(body.page_info.end_cursor);
             })
             .catch((e) => {
-                if (!ignore) setError(e.message);
+                if (!ignore) setError(e);
             })
             .finally(() => {
                 if (!ignore) setLoading(false);
@@ -116,8 +118,12 @@ export default function Customers() {
         >
             <BlockStack gap="400">
                 {error && (
-                    <Banner tone="critical" title="Couldn't load customers">
-                        <p>{error}</p>
+                    <Banner
+                        tone="critical"
+                        title="Couldn't load customers"
+                        action={reconnectAction(error)}
+                    >
+                        <p>{error.message}</p>
                     </Banner>
                 )}
                 {tiersError && (
