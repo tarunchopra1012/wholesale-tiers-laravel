@@ -5,7 +5,9 @@ declare(strict_types=1);
 namespace Tests\Feature\Services\Shopify;
 
 use App\Models\Shop;
+use App\Services\Shopify\OAuthException;
 use App\Services\Shopify\OAuthService;
+use App\Services\Shopify\ReauthorizationRequiredException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
@@ -73,6 +75,39 @@ final class AccessTokenRefreshTest extends TestCase
 
         $this->assertSame('shpat_refreshed_elsewhere', $this->oauth()->freshAccessToken($stale));
         Http::assertNothingSent();
+    }
+
+    public function test_a_refused_refresh_token_sends_the_merchant_back_through_oauth(): void
+    {
+        // Shopify's documented answer for a refresh token that has expired
+        // or been replaced.
+        Http::fake(['*' => Http::response(['error' => 'invalid_request'], 401)]);
+
+        $shop = Shop::factory()->create([
+            'shop_domain' => 'example-store.myshopify.com',
+            'access_token_expires_at' => now()->addSeconds(30),
+        ]);
+
+        try {
+            $this->oauth()->freshAccessToken($shop);
+            $this->fail('Expected ReauthorizationRequiredException.');
+        } catch (ReauthorizationRequiredException $e) {
+            $this->assertSame('https://app.example.test/auth?shop=example-store.myshopify.com', $e->reauthorizeUrl);
+        }
+    }
+
+    public function test_a_passing_refresh_failure_is_not_mistaken_for_a_dead_token(): void
+    {
+        // Shopify down for a moment. The refresh token may be fine, so this
+        // must stay an ordinary error the next request retries, not send the
+        // merchant through OAuth.
+        Http::fake(['*' => Http::response('', 503)]);
+
+        $shop = Shop::factory()->create(['access_token_expires_at' => now()->addSeconds(30)]);
+
+        $this->expectException(OAuthException::class);
+
+        $this->oauth()->freshAccessToken($shop);
     }
 
     private function oauth(): OAuthService
