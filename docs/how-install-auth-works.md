@@ -33,7 +33,7 @@ Three values carry the whole process. Learn these three and the rest is detail:
 
 Most confusion about Shopify auth comes from mixing up two separate things:
 
-|            | **A. The install** (sections 3–8)               | **B. Every API call afterwards** (section 9)            |
+|            | **A. The install** (sections 3–8)               | **B. Every API call afterwards** ([next doc][after])    |
 | ---------- | ----------------------------------------------- | ------------------------------------------------------- |
 | Question   | "Is this app allowed to read this store?"       | "Which store is this click coming from?"                |
 | When       | Once per store (and again on reinstall)         | Every `fetch('/api/…')` from React                      |
@@ -43,6 +43,8 @@ Most confusion about Shopify auth comes from mixing up two separate things:
 | End result | A row in `shops` holding the access token       | Laravel knows which `shops` row to use for this request |
 
 **A gets Laravel the key. B tells Laravel whose key to use.**
+
+[after]: how-api-auth-works.md
 
 ---
 
@@ -64,7 +66,8 @@ Four players:
 | `state`                    | `6902b36e…`        | Browser (in URLs), Shopify (during consent), MySQL       | Until the callback deletes it, or the session expires |
 | `code`                     | made on Install    | Browser (in the callback URL)                            | Short. Works once                                     |
 | `hmac`                     | made on Install    | Browser (in the callback URL)                            | One request                                           |
-| Access token               | never shown        | Laravel and MySQL (encrypted). **Never the browser**     | Expires. The refresh token gets a new one             |
+| Access token               | never shown        | Laravel and MySQL (encrypted). **Never the browser**     | 1 hour. The refresh token gets a new one              |
+| Refresh token              | never shown        | Laravel and MySQL (encrypted). **Never the browser**     | 90 days. Replaced by a new one on every refresh       |
 | ID token                   | made by App Bridge | Browser → Laravel, on every API call                     | About 60 seconds                                      |
 
 ---
@@ -379,6 +382,8 @@ can cash it. And once it's cashed, it's dead.
 
 `expiring=1` asks for a token that expires, plus a refresh token to get new
 ones. Later, `freshAccessToken()` handles the refresh before each Admin API call.
+[how-api-auth-works.md](how-api-auth-works.md), sections 6 and 7, walks through
+the refresh and what happens when it fails.
 
 Laravel then checks `scope`. If Shopify granted less than `SHOPIFY_SCOPES`
 asked for, the install fails, rather than saving a token that can't do its job.
@@ -419,7 +424,7 @@ Location: https://tarun-dev-store-pnerqrpu.myshopify.com/admin/apps/61c0dd61…
 ```
 
 Shopify opens its admin and loads your app inside an iframe. From here,
-section 9 takes over.
+[how-api-auth-works.md](how-api-auth-works.md) takes over.
 
 ---
 
@@ -561,52 +566,11 @@ WHERE FROM_BASE64(payload) LIKE '%shopify_oauth%';
 
 ## 9. After install: how each API call is authenticated
 
-Once the app is inside the admin, the session cookie plays no part. The `/api`
-routes don't even load the session middleware.
-
-```
-  Shopify admin (admin.shopify.com)
-    └─ iframe: your app (the tunnel URL), with App Bridge loaded
-         React:       fetch('/api/customers')
-         App Bridge:  adds  Authorization: Bearer <ID token>
-                  │
-                  │   no cookie, just the token
-                  ▼
-  Laravel: VerifyShopifySessionToken
-         1. signed with our API secret?     (HS256 signature)
-         2. still fresh?                    (exp / nbf, lives about 60 s)
-         3. issued for our app?             (aud = our client ID)
-         4. which shop?                     (dest → tarun-dev-store-….myshopify.com)
-         5. has that shop installed us?     [DB] shops row, not uninstalled
-                  │
-                  │   puts the Shop row on the request
-                  ▼
-  Controller → ShopifyGraphQLClient
-         X-Shopify-Access-Token: <access token from the shops row,
-                                  refreshed first if it's about to expire>
-                  │
-                  ▼
-  Shopify Admin API → JSON → Laravel → JSON (no token inside) → React
-```
-
-**Why no cookie here?** The app runs in an iframe on `admin.shopify.com`, which
-is a different site from your tunnel. Browsers increasingly block cookies in
-that position. A token in a header works everywhere.
-
-**How this connects to the `sessionStorage` you saw:** `app-bridge-config`
-holds the `apiKey`, `shop` and `host`, so App Bridge knows who it is. You can
-edit that `shop` in DevTools. That's why Laravel never trusts a shop name sent
-by the browser. It reads the shop from `dest` inside the signed token instead.
-Change one character of the token and check 1 fails.
-
-**What goes in and out on one API call:**
-
-| Direction         | Contents                                                                                      |
-| ----------------- | --------------------------------------------------------------------------------------------- |
-| React → Laravel   | `GET /api/customers?…` with `Authorization: Bearer eyJ…` (the ID token)                       |
-| Laravel → Shopify | `POST /admin/api/2026-07/graphql.json` with `X-Shopify-Access-Token: …` and the GraphQL query |
-| Shopify → Laravel | JSON: the customers, `pageInfo`, and the query's cost                                         |
-| Laravel → React   | JSON shaped by `CustomerResource`. No tokens, ever                                            |
+This has its own document now: [how-api-auth-works.md](how-api-auth-works.md).
+It covers how App Bridge attaches the ID token, why moving between screens
+authenticates nothing, how the one-hour access token is renewed, what the
+merchant sees when it can't be, and why jwt.io can't read the `access_token`
+column.
 
 ---
 
@@ -621,7 +585,8 @@ Change one character of the token and check 1 fails.
 - **Session**: data Laravel keeps on the server for one browser, found using the ID in the cookie.
 - **base64**: a way to write any data as plain letters and digits. It's an encoding, not encryption, so anyone can reverse it.
 - **JWT / ID token**: a small signed package of JSON. Anyone can read it, but nobody can change it without breaking the signature.
-- **Access token**: the key that lets Laravel call the Shopify Admin API for one store.
+- **Access token**: the key that lets Laravel call the Shopify Admin API for one store. A random string, not a JWT. Here it lives one hour.
+- **Refresh token**: a second key, good for 90 days, whose only use is getting a new access token.
 - **Scope**: one permission, like `read_customers`.
 
 ---
