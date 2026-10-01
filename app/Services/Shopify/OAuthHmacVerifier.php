@@ -34,6 +34,14 @@ final readonly class OAuthHmacVerifier
 
         $expected = hash_hmac('sha256', http_build_query($query), $this->secret);
 
+        dump([ // DEBUG(dump)
+            'step' => '3. hmac: re-signing the query with the app secret',
+            'signed message (sorted, without hmac)' => http_build_query($query),
+            'hmac from Shopify' => $given,
+            'hmac we computed' => $expected,
+            'match' => hash_equals($expected, $given),
+        ]);
+
         // Constant-time: a plain === returns sooner the earlier the first
         // wrong character is, which leaks the signature byte by byte.
         return hash_equals($expected, $given);

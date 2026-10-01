@@ -24,6 +24,8 @@ final class UpdateTierSettingsRequest extends FormRequest
      */
     public function rules(): array
     {
+        dump(['step' => '[validation] UpdateTierSettingsRequest: raw input, before the rules run', 'input' => $this->all()]); // DEBUG(dump)
+
         /** @var Shop $shop */
         $shop = $this->attributes->get('shop');
 

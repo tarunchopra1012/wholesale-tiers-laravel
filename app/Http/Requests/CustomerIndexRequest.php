@@ -22,6 +22,8 @@ final class CustomerIndexRequest extends FormRequest
      */
     public function rules(): array
     {
+        dump(['step' => '[validation] CustomerIndexRequest: raw input, before the rules run', 'input' => $this->all()]); // DEBUG(dump)
+
         return [
             // Pasted into Shopify's search syntax, so tag-safe characters
             // only: unchecked, "x OR tag:y" would change what the search

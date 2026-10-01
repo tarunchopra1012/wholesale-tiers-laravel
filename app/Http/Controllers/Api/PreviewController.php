@@ -38,6 +38,14 @@ final class PreviewController extends Controller
 
         $tiers = $shop->tierSettings()->orderBy('tag')->get();
 
+        dump([ // DEBUG(dump)
+            'step' => '[preview] PreviewController::show: pricing the product for each tier',
+            'shop' => $shop->shop_domain,
+            'validated' => $request->validated(),
+            'product' => $product,
+            'tiers' => $tiers->map->only(['id', 'tag', 'discount_type', 'discount_value'])->all(),
+        ]);
+
         return new PreviewResource([
             'product' => $product,
             'tiers' => $tiers->map(fn (TierSetting $tier): array => [

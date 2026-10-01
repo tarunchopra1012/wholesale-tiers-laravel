@@ -92,6 +92,21 @@ final readonly class OAuthService
             throw new OAuthException("Could not reach {$shop} to exchange the code.", previous: $e);
         }
 
+        $body = $response->json() ?? []; // DEBUG(dump)
+        foreach (['access_token', 'refresh_token'] as $key) { // DEBUG(dump)
+            if (is_string($body[$key] ?? null)) { // DEBUG(dump)
+                $body[$key] = \Illuminate\Support\Str::mask($body[$key], '*', 8); // DEBUG(dump)
+            } // DEBUG(dump)
+        } // DEBUG(dump)
+        dump([ // DEBUG(dump)
+            'step' => '5. service: traded the code for a token',
+            'POST' => "https://{$shop}/admin/oauth/access_token",
+            'sent' => ['client_id' => $this->apiKey, 'client_secret' => '[hidden]', 'code' => $code, 'expiring' => '1'],
+            'status' => $response->status(),
+            'response (tokens masked)' => $body,
+            'requested scopes' => $this->scopes,
+        ]);
+
         if ($response->failed()) {
             $reason = $response->json('error_description');
 
@@ -116,7 +131,7 @@ final readonly class OAuthService
             throw new OAuthException("{$shop} did not grant: ".implode(', ', $missing).'.');
         }
 
-        return Shop::updateOrCreate(
+        $saved = Shop::updateOrCreate( // DEBUG(dump): was `return Shop::updateOrCreate(`
             ['shop_domain' => $shop->value],
             [
                 ...$tokens,
@@ -126,6 +141,16 @@ final readonly class OAuthService
                 'uninstalled_at' => null,
             ],
         );
+
+        dump([ // DEBUG(dump)
+            'step' => '6. service: shop row saved (token encrypted in the database)',
+            'granted scopes' => $grantedScopes,
+            'missing scopes' => $missing,
+            'new row?' => $saved->wasRecentlyCreated,
+            'shop' => $saved->only(['id', 'shop_domain', 'scopes', 'installed_at', 'uninstalled_at', 'access_token_expires_at', 'refresh_token_expires_at']),
+        ]);
+
+        return $saved; // DEBUG(dump)
     }
 
     /**
@@ -140,6 +165,15 @@ final readonly class OAuthService
      */
     public function freshAccessToken(Shop $shop): string
     {
+        dump([ // DEBUG(dump)
+            'step' => '[token] freshAccessToken: does the access token need refreshing?',
+            'shop' => $shop->shop_domain,
+            'access_token_expires_at' => $shop->access_token_expires_at?->toDateTimeString() ?? 'never (non-expiring token)',
+            'now' => now()->toDateTimeString(),
+            'expires within '.self::REFRESH_MARGIN_SECONDS.'s, so refresh' => $this->expiresSoon($shop),
+            'has refresh token' => $shop->refresh_token !== null,
+        ]);
+
         if (! $this->expiresSoon($shop)) {
             return $shop->access_token;
         }
@@ -221,6 +255,12 @@ final readonly class OAuthService
         // revive it, and Shopify's advice is to send the merchant through
         // OAuth again.
         if ($response->status() === 401) {
+            dump([ // DEBUG(dump)
+                'step' => '[token] refreshAccessToken: Shopify refused the refresh token, merchant must reconnect',
+                'status' => 401,
+                'body' => $response->json(),
+            ]);
+
             throw new ReauthorizationRequiredException(
                 $this->reauthorizeUrl($shop),
                 "Shopify refused the refresh token for {$domain}.",
@@ -241,6 +281,14 @@ final readonly class OAuthService
         // working once the new one is used. Both have to be saved, or the
         // next refresh fails.
         $shop->update($this->tokenColumns($response, $domain));
+
+        dump([ // DEBUG(dump)
+            'step' => '[token] refreshAccessToken: new tokens saved',
+            'status' => $response->status(),
+            'access_token_expires_at' => $shop->access_token_expires_at?->toDateTimeString(),
+            'refresh_token_expires_at' => $shop->refresh_token_expires_at?->toDateTimeString(),
+            'scope' => $response->json('scope'),
+        ]);
     }
 
     /**

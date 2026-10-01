@@ -22,6 +22,8 @@ final class PreviewRequest extends FormRequest
      */
     public function rules(): array
     {
+        dump(['step' => '[validation] PreviewRequest: raw input, before the rules run', 'input' => $this->all()]); // DEBUG(dump)
+
         return [
             // Shopify's global ID for a product. It goes to Shopify as a
             // typed ID variable, not into a search string, so this isn't

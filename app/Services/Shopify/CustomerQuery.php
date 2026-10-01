@@ -75,7 +75,7 @@ final readonly class CustomerQuery
             throw new ShopifyApiException('Unexpected shape in the customers response.');
         }
 
-        return [
+        $page = [ // DEBUG(dump): was `return [`
             'customers' => array_map(
                 fn (array $edge): array => $this->customer($edge['node']),
                 $connection['edges'],
@@ -85,6 +85,17 @@ final readonly class CustomerQuery
                 'endCursor' => $connection['pageInfo']['endCursor'] ?? null,
             ],
         ];
+
+        dump([ // DEBUG(dump)
+            'step' => '[customers] CustomerQuery::page: edges/node flattened',
+            'search string' => $tag === null ? '(none: all customers)' : "tag:{$tag}",
+            'after cursor' => $after,
+            'customers on this page' => count($page['customers']),
+            'pageInfo' => $page['pageInfo'],
+            'first customer, mapped' => $page['customers'][0] ?? null,
+        ]);
+
+        return $page; // DEBUG(dump)
     }
 
     /**

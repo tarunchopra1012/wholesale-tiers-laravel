@@ -26,6 +26,12 @@ final class CustomerController extends Controller
         /** @var Shop $shop */
         $shop = $request->attributes->get('shop');
 
+        dump([ // DEBUG(dump)
+            'step' => '[customers] CustomerController::index: validated input',
+            'shop' => $shop->shop_domain,
+            'validated' => $request->validated(),
+        ]);
+
         $page = (new CustomerQuery(new ShopifyGraphQLClient($shop, $oauth)))
             ->page($request->validated('tier'), $request->validated('after'));
 

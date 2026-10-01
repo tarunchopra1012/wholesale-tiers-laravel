@@ -43,6 +43,17 @@ final readonly class TierCalculator
         };
 
         // The one place anything is rounded.
-        return max(0, $final->toScale(0, RoundingMode::HalfUp)->toInt());
+        $result = max(0, $final->toScale(0, RoundingMode::HalfUp)->toInt()); // DEBUG(dump): was `return max(...)`
+
+        dump([ // DEBUG(dump)
+            'step' => '[preview] TierCalculator: one tier priced',
+            'tier' => $tier->tag,
+            'discount' => $tier->discount_type->value.' '.$tier->discount_value,
+            'base cents' => $basePriceCents,
+            'exact before rounding' => (string) $final,
+            'final cents (half-up, floored at 0)' => $result,
+        ]);
+
+        return $result; // DEBUG(dump)
     }
 }

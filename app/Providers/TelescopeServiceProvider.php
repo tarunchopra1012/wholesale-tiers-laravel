@@ -23,6 +23,12 @@ final class TelescopeServiceProvider extends TelescopeApplicationServiceProvider
         $this->loadMigrationsFrom(database_path('migrations/telescope'));
 
         $this->hideSecrets();
+
+        // DEBUG(dump): DEBUG_DUMP_API=false keeps /api dumps out of Telescope.
+        // Runs as each entry is recorded, while the request is still current.
+        Telescope::filter(fn (\Laravel\Telescope\IncomingEntry $entry): bool => $entry->type !== \Laravel\Telescope\EntryType::DUMP // DEBUG(dump)
+            || config('telescope.watchers.'.\Laravel\Telescope\Watchers\DumpWatcher::class.'.api') // DEBUG(dump)
+            || ! request()->is('api/*')); // DEBUG(dump)
     }
 
     /**

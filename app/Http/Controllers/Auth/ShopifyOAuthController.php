@@ -42,6 +42,15 @@ final class ShopifyOAuthController extends Controller
             'shop' => $shop->value,
         ]);
 
+        dump([ // DEBUG(dump)
+            'step' => '1. install: nonce saved, redirecting to Shopify consent screen',
+            'query' => $request->query(),
+            'shop' => $shop->value,
+            'state' => $state,
+            'session[shopify_oauth]' => $request->session()->get(self::SESSION_KEY),
+            'authorize_url' => $this->oauth->authorizeUrl($shop, $state),
+        ]);
+
         return redirect()->away($this->oauth->authorizeUrl($shop, $state));
     }
 
@@ -53,6 +62,12 @@ final class ShopifyOAuthController extends Controller
         $shop = ShopDomain::tryFrom($request->query('shop'))
             ?? abort(400, 'Missing or invalid shop domain.');
 
+        dump([ // DEBUG(dump)
+            'step' => '2. callback: Shopify redirected back',
+            'query' => $request->query(),
+            'shop' => $shop->value,
+        ]);
+
         if (! $hmac->verify($request->query())) {
             abort(403, 'Invalid HMAC.');
         }
@@ -61,6 +76,14 @@ final class ShopifyOAuthController extends Controller
         // callback URL works once and a replay fails.
         $expected = $request->session()->pull(self::SESSION_KEY);
         $state = $request->query('state');
+
+        dump([ // DEBUG(dump)
+            'step' => '4. callback: comparing state with the nonce from step 1',
+            'session nonce (pulled, now deleted)' => $expected,
+            'state from Shopify' => $state,
+            'state matches' => is_array($expected) && is_string($state) && hash_equals($expected['state'], $state),
+            'shop matches' => is_array($expected) && $expected['shop'] === $shop->value,
+        ]);
 
         if (! is_array($expected)
             || ! is_string($state)
@@ -78,9 +101,20 @@ final class ShopifyOAuthController extends Controller
         try {
             $this->oauth->install($shop, $code);
         } catch (OAuthException $e) {
+            dump([ // DEBUG(dump)
+                'step' => 'X. callback: OAuthException, answering 403',
+                'exception' => $e::class,
+                'message' => $e->getMessage(),
+                'previous' => $e->getPrevious()?->getMessage(),
+            ]);
             report($e);
             abort(403, 'Shopify did not grant access.');
         }
+
+        dump([ // DEBUG(dump)
+            'step' => '7. callback: installed, redirecting into the admin',
+            'admin_app_url' => $this->oauth->adminAppUrl($shop),
+        ]);
 
         return redirect()->away($this->oauth->adminAppUrl($shop));
     }

@@ -33,6 +33,14 @@ final class VerifyShopifySessionToken
     {
         $token = $request->bearerToken();
 
+        dump([ // DEBUG(dump)
+            'step' => '[api] 1. middleware: request arrived',
+            'route' => $request->method().' '.$request->path(),
+            'query' => $request->query(),
+            'body' => $request->except([]),
+            'bearer token (masked)' => is_string($token) ? \Illuminate\Support\Str::mask($token, '*', 16) : null,
+        ]);
+
         if ($token === null || $token === '') {
             $this->reject('No bearer token.', retry: true);
         }
@@ -53,6 +61,12 @@ final class VerifyShopifySessionToken
 
         $request->attributes->set('shop', $shop);
 
+        dump([ // DEBUG(dump)
+            'step' => '[api] 3. middleware: shop resolved from the token, passing to the controller',
+            'shop from token dest' => $domain->value,
+            'shop row' => $shop->only(['id', 'shop_domain', 'scopes', 'installed_at', 'uninstalled_at', 'access_token_expires_at']),
+        ]);
+
         return $next($request);
     }
 
@@ -64,6 +78,12 @@ final class VerifyShopifySessionToken
     private function reject(string $reason, bool $retry): never
     {
         Log::info("API request rejected: {$reason}");
+
+        dump([ // DEBUG(dump)
+            'step' => '[api] X. middleware: rejected with 401',
+            'reason' => $reason,
+            'tell App Bridge to retry with a fresh token' => $retry,
+        ]);
 
         abort(401, 'Unauthorized.', $retry ? self::RETRY_HEADER : []);
     }

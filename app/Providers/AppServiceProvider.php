@@ -25,21 +25,21 @@ class AppServiceProvider extends ServiceProvider
     {
         // Closures, so config is read only when these are first needed: a
         // missing credential breaks /auth, not every page.
-        $this->app->bind(OAuthHmacVerifier::class, fn (): OAuthHmacVerifier => new OAuthHmacVerifier(
+        $this->app->bind(OAuthHmacVerifier::class, fn (): OAuthHmacVerifier => $this->debugBuilt(new OAuthHmacVerifier( // DEBUG(dump): wrapped in debugBuilt()
             secret: $this->requiredShopifyConfig('api_secret'),
-        ));
+        )));
 
-        $this->app->bind(OAuthService::class, fn (): OAuthService => new OAuthService(
+        $this->app->bind(OAuthService::class, fn (): OAuthService => $this->debugBuilt(new OAuthService( // DEBUG(dump): wrapped in debugBuilt()
             apiKey: $this->requiredShopifyConfig('api_key'),
             apiSecret: $this->requiredShopifyConfig('api_secret'),
             scopes: $this->requiredShopifyConfig('scopes'),
             appUrl: $this->requiredShopifyConfig('app_url'),
-        ));
+        )));
 
-        $this->app->bind(SessionTokenVerifier::class, fn (): SessionTokenVerifier => new SessionTokenVerifier(
+        $this->app->bind(SessionTokenVerifier::class, fn (): SessionTokenVerifier => $this->debugBuilt(new SessionTokenVerifier( // DEBUG(dump): wrapped in debugBuilt()
             secret: $this->requiredShopifyConfig('api_secret'),
             clientId: $this->requiredShopifyConfig('api_key'),
-        ));
+        )));
 
         // Telescope is a dev dependency, so the production image doesn't have
         // it. Registered here, not in bootstrap/providers.php, so it only
@@ -82,6 +82,31 @@ class AppServiceProvider extends ServiceProvider
             URL::forceScheme('https');
         }
     }
+
+    /**
+     * DEBUG(dump): shows when the container builds a Shopify service, and
+     * the config it was built from. Secret masked.
+     *
+     * @template T of object
+     *
+     * @param  T  $service
+     * @return T
+     */
+    private function debugBuilt(object $service): object // DEBUG(dump)
+    {
+        dump([ // DEBUG(dump)
+            'step' => '[container] AppServiceProvider: built '.class_basename($service),
+            'shopify config' => [
+                'api_key' => config('shopify.api_key'),
+                'api_secret (masked)' => \Illuminate\Support\Str::mask((string) config('shopify.api_secret'), '*', 6),
+                'scopes' => config('shopify.scopes'),
+                'app_url' => config('shopify.app_url'),
+                'api_version' => config('shopify.api_version'),
+            ],
+        ]);
+
+        return $service; // DEBUG(dump)
+    } // DEBUG(dump)
 
     /**
      * Fail loudly on a missing Shopify setting. Otherwise an empty client ID

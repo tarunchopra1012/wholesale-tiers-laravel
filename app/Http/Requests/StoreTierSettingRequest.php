@@ -23,6 +23,8 @@ final class StoreTierSettingRequest extends FormRequest
      */
     public function rules(): array
     {
+        dump(['step' => '[validation] StoreTierSettingRequest: raw input, before the rules run', 'input' => $this->all()]); // DEBUG(dump)
+
         /** @var Shop $shop */
         $shop = $this->attributes->get('shop');
 

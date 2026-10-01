@@ -56,6 +56,17 @@ final readonly class SessionTokenVerifier
             throw new InvalidSessionTokenException('Session token rejected: '.$e->getMessage(), previous: $e);
         }
 
+        dump([ // DEBUG(dump)
+            'step' => '[api] 2. session token: signature valid, checking claims',
+            'claims' => (array) $claims,
+            'iat / nbf / exp' => array_map(
+                fn (mixed $t): ?string => is_int($t) ? date('H:i:s', $t) : null,
+                ['iat' => $claims->iat ?? null, 'nbf' => $claims->nbf ?? null, 'exp' => $claims->exp ?? null],
+            ),
+            'now' => date('H:i:s'),
+            'aud matches our client id' => ($claims->aud ?? null) === $this->clientId,
+        ]);
+
         // php-jwt only checks exp and nbf when they are present. Shopify
         // always sends both, so a token without them is not one of theirs.
         if (! isset($claims->exp, $claims->nbf)) {

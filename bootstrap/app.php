@@ -48,8 +48,16 @@ return Application::configure(basePath: dirname(__DIR__))
         // Not a 401 either: that means a bad ID token, and this one was fine.
         // The exception is still reported, so its technical reason reaches
         // the log; the merchant gets a plain sentence and the way out.
-        $exceptions->render(fn (ReauthorizationRequiredException $e): JsonResponse => response()->json([
-            'message' => "Shopify no longer accepts this app's connection to your store. Reconnect to continue.",
-            'reauthorize_url' => $e->reauthorizeUrl,
-        ], 403));
+        $exceptions->render(function (ReauthorizationRequiredException $e): JsonResponse { // DEBUG(dump): was an arrow fn
+            dump([ // DEBUG(dump)
+                'step' => '[exceptions] ReauthorizationRequiredException rendered as 403 with a reconnect URL',
+                'reason' => $e->getMessage(),
+                'reauthorize_url' => $e->reauthorizeUrl,
+            ]);
+
+            return response()->json([
+                'message' => "Shopify no longer accepts this app's connection to your store. Reconnect to continue.",
+                'reauthorize_url' => $e->reauthorizeUrl,
+            ], 403);
+        });
     })->create();

@@ -27,6 +27,12 @@ final class TierSettingController extends Controller
         /** @var Shop $shop */
         $shop = $request->attributes->get('shop');
 
+        dump([ // DEBUG(dump)
+            'step' => '[tiers] TierSettingController::index: listing tiers',
+            'shop' => $shop->shop_domain,
+            'tiers' => $shop->tierSettings()->orderBy('tag')->get()->map->only(['id', 'tag', 'discount_type', 'discount_value'])->all(),
+        ]);
+
         return TierSettingResource::collection($shop->tierSettings()->orderBy('tag')->get());
     }
 
@@ -40,14 +46,24 @@ final class TierSettingController extends Controller
         /** @var Shop $shop */
         $shop = $request->attributes->get('shop');
 
+        dump([ // DEBUG(dump)
+            'step' => '[tiers] TierSettingController::store: validated, creating',
+            'shop' => $shop->shop_domain,
+            'validated' => $request->validated(),
+        ]);
+
         try {
             $tier = $shop->tierSettings()->create($request->validated());
         } catch (UniqueConstraintViolationException) {
+            dump(['step' => '[tiers] store: unique index caught a duplicate tag (race with another request)']); // DEBUG(dump)
+
             // Validation already checked the tag, but two requests can both
             // pass that check before either inserts. The unique index is
             // the real guard; this turns it into an answer the page can show.
             throw ValidationException::withMessages(['tag' => 'Another tier already uses this tag.']);
         }
+
+        dump(['step' => '[tiers] store: created', 'tier' => $tier->toArray()]); // DEBUG(dump)
 
         // A resource for a model created in this request answers 201.
         return new TierSettingResource($tier);
@@ -74,6 +90,13 @@ final class TierSettingController extends Controller
                     ->get()
                     ->keyBy('id');
 
+                dump([ // DEBUG(dump)
+                    'step' => '[tiers] TierSettingController::update: inside the transaction',
+                    'shop' => $shop->shop_domain,
+                    'before' => $tiers->map->only(['id', 'tag', 'discount_type', 'discount_value'])->all(),
+                    'changes (validated)' => $changes,
+                ]);
+
                 foreach ($changes as $change) {
                     $tiers[$change['id']]->update([
                         'tag' => $change['tag'],
@@ -83,6 +106,7 @@ final class TierSettingController extends Controller
                 }
             });
         } catch (UniqueConstraintViolationException) {
+            dump(['step' => '[tiers] update: unique index caught a duplicate tag, transaction rolled back']); // DEBUG(dump)
             // As in store(): another request took a tag between validation
             // and the update. The transaction has rolled everything back.
             throw ValidationException::withMessages([
@@ -104,6 +128,13 @@ final class TierSettingController extends Controller
 
         // Looked up through the shop rather than bound from the route:
         // route-model binding would find any shop's tier by its id.
+        dump([ // DEBUG(dump)
+            'step' => '[tiers] TierSettingController::destroy: looking up the tier through the shop',
+            'shop' => $shop->shop_domain,
+            'id' => $id,
+            'found' => $shop->tierSettings()->find($id)?->only(['id', 'tag', 'discount_type', 'discount_value']),
+        ]);
+
         $tier = $shop->tierSettings()->find($id) ?? abort(404, 'This store has no tier with that ID.');
 
         $tier->delete();

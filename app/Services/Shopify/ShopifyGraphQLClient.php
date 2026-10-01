@@ -41,12 +41,26 @@ final readonly class ShopifyGraphQLClient
      */
     public function query(string $query, array $variables = []): array
     {
+        dump([ // DEBUG(dump)
+            'step' => '[shopify] query: sending GraphQL',
+            'shop' => $this->shop->shop_domain,
+            'operation' => preg_match('/(query|mutation)\s+(\w+)/', $query, $m) ? "{$m[1]} {$m[2]}" : '(anonymous)',
+            'variables' => $variables,
+            'query' => $query,
+        ]);
+
         $response = $this->send($query, $variables);
 
         foreach (self::RETRY_DELAYS_SECONDS as $seconds) {
             if (! $this->isThrottled($response)) {
                 break;
             }
+
+            dump([ // DEBUG(dump)
+                'step' => '[shopify] query: THROTTLED, backing off before retrying',
+                'wait seconds' => $seconds,
+                'cost' => $response->json('extensions.cost'),
+            ]);
 
             Sleep::for($seconds)->seconds();
             $response = $this->send($query, $variables);
@@ -85,6 +99,11 @@ final readonly class ShopifyGraphQLClient
             throw new ShopifyApiException('Shopify returned no data.');
         }
 
+        dump([ // DEBUG(dump)
+            'step' => '[shopify] query: raw `data` block from Shopify',
+            'data' => $data,
+        ]);
+
         return $data;
     }
 
@@ -118,6 +137,15 @@ final readonly class ShopifyGraphQLClient
         } catch (ConnectionException $e) {
             throw new ShopifyApiException("Could not reach {$this->shop->shop_domain}.", previous: $e);
         }
+
+        dump([ // DEBUG(dump)
+            'step' => '[shopify] send: HTTP round trip done',
+            'POST' => $url,
+            'X-Shopify-Access-Token (masked)' => \Illuminate\Support\Str::mask($token, '*', 8),
+            'status' => $response->status(),
+            'cost (requested / actual / budget left)' => $response->json('extensions.cost'),
+            'errors' => $response->json('errors'),
+        ]);
 
         // The cost block and the shop — never the variables or the body.
         // Customer data is protected; it doesn't belong in a log file.

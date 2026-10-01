@@ -25,6 +25,13 @@ final class ProductController extends Controller
         /** @var Shop $shop */
         $shop = $request->attributes->get('shop');
 
+        dump([ // DEBUG(dump)
+            'step' => '[products] ProductController::index: validated input',
+            'shop' => $shop->shop_domain,
+            'validated' => $request->validated(),
+            'limit used (default 20)' => $request->integer('limit', 20),
+        ]);
+
         $products = (new ProductQuery(new ShopifyGraphQLClient($shop, $oauth)))
             ->first($request->integer('limit', 20));
 

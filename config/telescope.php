@@ -159,6 +159,9 @@ return [
         Watchers\DumpWatcher::class => [
             'enabled' => env('TELESCOPE_DUMP_WATCHER', true),
             'always' => env('TELESCOPE_DUMP_WATCHER_ALWAYS', false),
+            // DEBUG(dump): false drops dump() calls made during /api/* requests,
+            // so only OAuth (and other web-route) dumps reach the Dumps tab.
+            'api' => env('DEBUG_DUMP_API', true), // DEBUG(dump)
         ],
 
         Watchers\EventWatcher::class => [

@@ -91,10 +91,19 @@ final readonly class ProductQuery
 
         $currency = $this->currency($data);
 
-        return array_map(
+        $products = array_map( // DEBUG(dump): was `return array_map(`
             fn (array $edge): array => $this->product($edge['node'], $currency),
             $edges,
         );
+
+        dump([ // DEBUG(dump)
+            'step' => '[products] ProductQuery::first: prices turned into cents',
+            'asked for' => $count,
+            'currency' => $currency,
+            'products' => $products,
+        ]);
+
+        return $products; // DEBUG(dump)
     }
 
     /**
@@ -115,10 +124,20 @@ final readonly class ProductQuery
         }
 
         if ($data['product'] === null) {
+            dump(['step' => '[preview] ProductQuery::find: Shopify has no such product', 'id' => $id]); // DEBUG(dump)
+
             return null;
         }
 
-        return $this->product($data['product'], $this->currency($data));
+        $product = $this->product($data['product'], $this->currency($data)); // DEBUG(dump): was `return $this->product(...)`
+
+        dump([ // DEBUG(dump)
+            'step' => '[preview] ProductQuery::find: product mapped',
+            'raw price from Shopify' => $data['product']['variants']['edges'][0]['node']['price'] ?? null,
+            'product' => $product,
+        ]);
+
+        return $product; // DEBUG(dump)
     }
 
     /**

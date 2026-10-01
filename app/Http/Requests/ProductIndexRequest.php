@@ -22,6 +22,8 @@ final class ProductIndexRequest extends FormRequest
      */
     public function rules(): array
     {
+        dump(['step' => '[validation] ProductIndexRequest: raw input, before the rules run', 'input' => $this->all()]); // DEBUG(dump)
+
         return [
             // The Preview page asks for 1, to open on the first product;
             // Shopify's own picker handles the rest. 20 products cost 23 of
