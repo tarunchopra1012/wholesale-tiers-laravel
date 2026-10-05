@@ -2,6 +2,7 @@
 
 use App\Http\Middleware\VerifyShopifySessionToken;
 use App\Services\Shopify\ReauthorizationRequiredException;
+use App\Services\Shopify\TierDiscountSyncException;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
@@ -52,4 +53,11 @@ return Application::configure(basePath: dirname(__DIR__))
             'message' => "Shopify no longer accepts this app's connection to your store. Reconnect to continue.",
             'reauthorize_url' => $e->reauthorizeUrl,
         ], 403));
+
+        // The tiers are in the database; only the copy at checkout is old.
+        // A 502: the fault is Shopify's answer, not this request. Reported
+        // as well, so the log has the reason.
+        $exceptions->render(fn (TierDiscountSyncException $e): JsonResponse => response()->json([
+            'message' => "Your tiers are saved here, but Shopify didn't accept the update, so checkout still uses the previous discounts. Save again to retry.",
+        ], 502));
     })->create();
