@@ -898,3 +898,48 @@ created there. So those three work with an ID token issued by App Bridge, not
 only with a hand-signed one.
 
 **Not yet seen:** the product picker itself. It only exists inside the admin.
+
+## 5 Oct 2026 — tiers at checkout
+
+### Saving tiers is what updates checkout
+
+`TierSettingController` runs `TierDiscountSync` after every add, save and
+delete. The first sync creates the store's one automatic discount, "Wholesale
+tiers", pointing at the Function; every sync writes all tiers to its
+metafield. There is no separate "publish" step for a merchant to forget.
+
+The sync runs after the database save, not inside its transaction. If Shopify
+refuses or can't be reached, the tiers stay saved and the API answers 502
+with a sentence saying checkout still has the previous discounts.
+
+Before writing, the sync asks Shopify whether the saved discount ID still
+exists. A merchant can delete the discount in the admin; the next save then
+creates a new one instead of failing against a dead ID.
+
+### A customer in two tiers gets the larger discount, line by line
+
+This closes the question left open on 22–23 Sep. The Function compares, for
+each cart line, what each of the customer's tiers takes off one unit, and
+gives the line the larger. A percentage and a fixed amount can swap places
+between a cheap line and a dear one, so the winner is per line, not per cart.
+
+Chosen in the Function's own code rather than with Shopify's `MAXIMUM`
+selection strategy, so the fixtures can test it.
+
+A fixed tier is taken off each unit (`appliesToEachItem`), which is what the
+Settings page says and what `TierCalculator` previews.
+
+### Checkpoint
+
+- PHP suite: 36 passed, including `TierDiscountConfig` and four
+  `TierDiscountSync` cases against faked Shopify answers.
+- Function: 12 fixtures passed against the built WebAssembly.
+- The three operations' fields were checked against the store's 2026-07
+  schema by introspection.
+
+- On the dev store, after deploying version 20: Tarun pressed Save on the
+  Settings page, and the checkout of a customer tagged `wholesale-gold`
+  showed `WHOLESALE-GOLD (-$145.99)` on a $729.95 snowboard, which is 20%.
+
+**Not yet seen:** a silver customer, a guest and an untagged customer at
+checkout, and a save after the discount is deleted in the admin.
