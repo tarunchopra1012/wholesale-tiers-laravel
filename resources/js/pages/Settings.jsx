@@ -1,4 +1,5 @@
 import {
+    Badge,
     Banner,
     BlockStack,
     Box,
@@ -23,12 +24,23 @@ const TYPE_OPTIONS = [
     { label: 'Fixed amount off', value: 'fixed' },
 ];
 
-const NEW_TIER = { tag: '', discount_type: 'percentage', discount_value: '' };
+// The values are Polaris Badge tones, the same list as App\Enums\BadgeTone.
+const TONE_OPTIONS = [
+    { label: 'Blue', value: 'info' },
+    { label: 'Green', value: 'success' },
+    { label: 'Yellow', value: 'attention' },
+    { label: 'Orange', value: 'warning' },
+    { label: 'Red', value: 'critical' },
+    { label: 'Purple', value: 'magic' },
+    { label: 'Grey', value: 'new' },
+];
+
+const NEW_TIER = { tag: '', discount_type: 'percentage', discount_value: '', badge_tone: 'info' };
 
 // The fields that show their own error. Any other 422 key — a tier that was
 // deleted in another window, say — has nowhere to show, so it goes in the
 // banner.
-const FIELD_ERROR = /^tiers\.\d+\.(tag|discount_type|discount_value)$/;
+const FIELD_ERROR = /^tiers\.\d+\.(tag|discount_type|discount_value|badge_tone)$/;
 
 export default function Settings() {
     const navigate = useNavigate();
@@ -202,9 +214,8 @@ export default function Settings() {
                     <Card key={tier.id}>
                         <BlockStack gap="400">
                             <InlineStack align="space-between" blockAlign="center">
-                                <Text as="h2" variant="headingMd">
-                                    {tier.tag || 'Untitled tier'}
-                                </Text>
+                                {/* The badge as the Customers page will show it. */}
+                                <Badge tone={tier.badge_tone}>{tier.tag || 'Untitled tier'}</Badge>
                                 <Button variant="plain" tone="critical" onClick={() => askDelete(tier)}>
                                     Delete
                                 </Button>
@@ -330,6 +341,14 @@ function TierFields({ tier, onChange, error, tagHelp }) {
                     error={error('discount_value')}
                 />
             </FormLayout.Group>
+            <Select
+                label="Badge colour"
+                options={TONE_OPTIONS}
+                value={tier.badge_tone}
+                onChange={(value) => onChange('badge_tone', value)}
+                helpText="The colour of this tier's badge on the Customers page."
+                error={error('badge_tone')}
+            />
         </FormLayout>
     );
 }
