@@ -221,7 +221,11 @@ export default function Settings() {
 
                 {tiers.length > 0 && (
                     <Box paddingBlockEnd="400">
-                        <InlineStack align="end">
+                        <InlineStack align="space-between" blockAlign="center" gap="400">
+                            <Text as="p" tone="subdued">
+                                Saved tiers apply at checkout through the “Wholesale tiers”
+                                discount in your store's Discounts.
+                            </Text>
                             <Button variant="primary" loading={saving} onClick={save}>
                                 Save
                             </Button>
