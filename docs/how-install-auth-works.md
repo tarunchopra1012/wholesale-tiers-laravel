@@ -235,14 +235,14 @@ from them.
 
 **Two kinds of ticket:**
 
-|               | `state`                            | `access_change_uuid`                             |
-| ------------- | ---------------------------------- | ------------------------------------------------ |
-| Made by       | Your app                           | Shopify                                          |
-| Looks like    | 64 hex characters                  | A UUID                                           |
+|               | `state`                            | `access_change_uuid`                               |
+| ------------- | ---------------------------------- | -------------------------------------------------- |
+| Made by       | Your app                           | Shopify                                            |
+| Looks like    | 64 hex characters                  | A UUID                                             |
 | Job           | **A check**: two copies must match | **A lookup**: points to data stored somewhere else |
-| Analogy       | Torn ticket                        | Cloakroom ticket                                 |
-| Who uses it   | Your `callback()`                  | Shopify only                                     |
-| In your code? | Yes                                | No                                               |
+| Analogy       | Torn ticket                        | Cloakroom ticket                                   |
+| Who uses it   | Your `callback()`                  | Shopify only                                       |
+| In your code? | Yes                                | No                                                 |
 
 The cloakroom ticket is the same pattern as your `laravel-session` cookie
 (section 6). The browser holds only an ID, and the real data stays on the
