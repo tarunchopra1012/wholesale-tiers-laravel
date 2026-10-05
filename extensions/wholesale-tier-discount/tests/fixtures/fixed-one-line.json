@@ -1,0 +1,76 @@
+{
+  "payload": {
+    "export": "cart-lines-discounts-generate-run",
+    "target": "cart.lines.discounts.generate.run",
+    "input": {
+      "cart": {
+        "buyerIdentity": {
+          "customer": {
+            "hasTags": [
+              {
+                "tag": "wholesale-five-off",
+                "hasTag": true
+              }
+            ]
+          }
+        },
+        "lines": [
+          {
+            "id": "gid://shopify/CartLine/0",
+            "cost": {
+              "amountPerQuantity": {
+                "amount": "20.0"
+              }
+            }
+          }
+        ]
+      },
+      "discount": {
+        "discountClasses": [
+          "PRODUCT"
+        ],
+        "metafield": {
+          "jsonValue": {
+            "tags": [
+              "wholesale-five-off"
+            ],
+            "tiers": [
+              {
+                "tag": "wholesale-five-off",
+                "type": "fixed",
+                "value": "5.00"
+              }
+            ]
+          }
+        }
+      }
+    },
+    "output": {
+      "operations": [
+        {
+          "productDiscountsAdd": {
+            "candidates": [
+              {
+                "message": "wholesale-five-off",
+                "targets": [
+                  {
+                    "cartLine": {
+                      "id": "gid://shopify/CartLine/0"
+                    }
+                  }
+                ],
+                "value": {
+                  "fixedAmount": {
+                    "amount": "5.00",
+                    "appliesToEachItem": true
+                  }
+                }
+              }
+            ],
+            "selectionStrategy": "ALL"
+          }
+        }
+      ]
+    }
+  }
+}

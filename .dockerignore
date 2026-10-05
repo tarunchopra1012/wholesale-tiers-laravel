@@ -25,6 +25,11 @@ storage/framework/views/*
 # Keep the placeholder files, so the empty folders still exist in the image.
 !storage/**/.gitignore
 
+# The checkout Function. Shopify CLI builds and uploads it from the host; it
+# runs on Shopify, never in this image.
+extensions
+shopify.app.toml
+
 # Not needed at run time.
 .git
 .claude

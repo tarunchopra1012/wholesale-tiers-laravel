@@ -1,0 +1,4 @@
+{
+  "name": "Wholesale tier discount",
+  "description": "Applies the customer's wholesale tier discount to every cart line."
+}
