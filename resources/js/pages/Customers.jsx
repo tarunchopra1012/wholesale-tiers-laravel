@@ -228,7 +228,7 @@ function TierBadges({ tags, tiers }) {
     return (
         <InlineStack gap="100">
             {matches.map((tier) => (
-                <Badge key={tier.id} tone="info">
+                <Badge key={tier.id} tone={tier.badge_tone}>
                     {tier.tag}
                 </Badge>
             ))}
