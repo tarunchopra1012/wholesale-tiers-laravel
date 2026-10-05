@@ -1,7 +1,8 @@
 # wholesale-tiers
 
 An embedded Shopify admin app that lets a merchant assign wholesale discount
-tiers to customers by tag and preview the resulting prices.
+tiers to customers by tag, preview the resulting prices, and have those
+prices charged at checkout.
 
 **Video walkthrough:** [Building a Shopify Wholesale Tier App POC](https://www.loom.com/share/5871db562af4475d8b162db5a70f9d1b) (Loom)
 
@@ -10,8 +11,10 @@ tiers to customers by tag and preview the resulting prices.
 > pricing logic with its unit tests, and all three pages — Customers,
 > Settings and Price preview, in React and Polaris inside the admin — are in
 > place. A merchant can create, rename and delete tiers, page through their
-> customers, and price any product Shopify's own picker can find. The prices
-> are a preview only: nothing applies them at checkout yet. The app has also
+> customers, and price any product Shopify's own picker can find. Saved tiers
+> are also applied at checkout, by a Shopify Function that Laravel keeps
+> configured: on the development store a `wholesale-gold` customer paid 20%
+> less for a snowboard. The app has also
 > been deployed to AWS — ECS Fargate behind a load balancer and CloudFront,
 > with RDS MySQL — as a time-boxed demo, then deleted to avoid running costs;
 > see [Deployment on AWS](#deployment-on-aws). The roadmap below marks
@@ -34,9 +37,12 @@ What a merchant can do with it:
 2. Define the tiers — add `wholesale-gold` at 20% off and `wholesale-silver`
    at 10% off, change either of them, or delete one
 3. Preview the resulting price for any product, per tier
+4. Have a tagged customer charged their tier's price at checkout, with
+   nothing to type and no discount code
 
-This is not a storefront, a theme, or a headless site. Nobody shopping ever
-sees it. It is a tool inside the merchant's admin.
+This is not a storefront, a theme, or a headless site. It is a tool inside
+the merchant's admin; the only thing a shopper sees is the discount on their
+cart.
 
 ## Stack
 
@@ -49,6 +55,8 @@ sees it. It is a tool inside the merchant's admin.
 | Embedding         | App Bridge (CDN script)         | latest      |
 | Database          | MySQL (local) · RDS MySQL (AWS) | 8.0 · 8.4   |
 | Shopify Admin API | GraphQL                         | 2026-07     |
+| Checkout logic    | Shopify Function (JavaScript → WebAssembly) | — |
+| Function tooling  | Shopify CLI, on the host under Node 22+ | 4.x |
 | Runtime (dev)     | Docker Compose                  | —           |
 | Runtime (prod)    | One container: nginx + PHP-FPM under supervisord | — |
 | Hosting (demo)    | AWS: ECS Fargate (ARM), ALB, CloudFront, RDS, ECR, Parameter Store, CloudWatch Logs | — |
@@ -59,9 +67,10 @@ Four rules shape the whole design:
 
 1. **The Shopify access token never reaches the browser.** Every Admin API
    call originates in Laravel. There is no Shopify GraphQL in the React code.
+   The checkout Function has no token either and makes no API calls.
 2. **React talks to Laravel over plain REST JSON.** The only GraphQL in this
-   codebase is the outbound query string Laravel sends to Shopify. No GraphQL
-   server, no Apollo.
+   codebase is the outbound query string Laravel sends to Shopify, and the
+   Function's input query, which Shopify runs. No GraphQL server, no Apollo.
 3. **Every API request carries a session ID token.** App Bridge attaches
    `Authorization: Bearer <jwt>` to same-origin `fetch` calls, and Laravel
    middleware verifies it on every request. No sessions, no cookies, no CSRF
@@ -86,6 +95,38 @@ ShopifyGraphQLClient
 Shopify Admin API
 ```
 
+### Checkout: Laravel and the Function
+
+The discount at checkout cannot run on this server: Shopify computes prices
+on its own infrastructure. So the app has a second, much smaller program, a
+Shopify Function in `extensions/wholesale-tier-discount/`, which Shopify runs
+for every cart. The two never call each other. Laravel leaves the tiers where
+the Function can read them: a JSON metafield on one automatic discount.
+
+```
+Merchant presses Save in Settings
+  ▼
+Laravel   saves tier_settings, then TierDiscountSync
+  │         first time: creates the "Wholesale tiers" automatic discount
+  │         every time: writes all tiers to its metafield
+  ▼
+Shopify   discount → metafield  $app:wholesale-tiers / function-configuration
+  ▼         {"tags": [...], "tiers": [{"tag", "type", "value"}]}
+Function  runs on every cart: which tier tags does this customer have?
+  ▼         each line gets the tier that takes the most off
+Checkout  WHOLESALE-GOLD (-$145.99)
+```
+
+- **Saving is publishing.** Every add, save and delete on the Settings page
+  syncs; there is no separate step to forget.
+- **A store needs one Save** before its first discount exists.
+- **A customer in two tiers** gets the larger discount, line by line.
+- **If Shopify refuses the sync,** the tiers stay saved and the page says
+  checkout still has the previous ones.
+
+The full design is in
+[docs/how-checkout-discount-works.md](docs/how-checkout-discount-works.md).
+
 ### Data model
 
 ```
@@ -93,7 +134,8 @@ shops
   id, shop_domain (unique), access_token (encrypted cast),
   access_token_expires_at, refresh_token (encrypted cast),
   refresh_token_expires_at, scopes, installed_at,
-  uninstalled_at (nullable), timestamps
+  uninstalled_at (nullable), tier_discount_id (nullable),
+  tier_discount_synced_at (nullable), timestamps
 
 tier_settings
   id, shop_id (fk, cascade), tag, discount_type enum(percentage,fixed),
@@ -212,6 +254,40 @@ that store. Clear it with:
 npx @shopify/cli@latest app dev clean --client-id=<client id> --store=<your-store>.myshopify.com
 ```
 
+### The checkout Function
+
+The Function is built and released with Shopify CLI, which runs on your
+machine rather than in Docker and needs Node 22 or newer.
+
+Run its tests. They build the Function and run every fixture in
+`tests/fixtures/` against the WebAssembly; nothing touches Shopify:
+
+```bash
+cd extensions/wholesale-tier-discount
+npm install
+npx vitest run
+```
+
+Release it, from the repository root. `deploy` releases a whole app version
+from `shopify.app.toml`, so first make sure the URLs in that file are the
+current tunnel's:
+
+```bash
+shopify app deploy --allow-updates --message "What changed"
+```
+
+Then, in the store:
+
+1. Open the app, go to **Tier settings** and press **Save**. The first save
+   creates the "Wholesale tiers" discount; it then appears under
+   **Discounts** in the admin.
+2. On the storefront, log in as a customer tagged `wholesale-gold`, add a
+   product to the cart and open checkout. The line shows the tier and the
+   amount off.
+
+**Never run `shopify app dev` against this app.** It creates the dev preview
+described above, which overrides the released version for the store.
+
 ### Setup notes worth knowing
 
 A few things in this stack are easy to get wrong, and cost real time to
@@ -234,6 +310,8 @@ diagnose:
   why the `vite` container builds files instead. If `public/hot` is left over
   from a dev server, delete it — while it exists, Laravel points the page at
   `localhost:5173`.
+- **The watch build can miss a saved file.** If the admin still shows the old
+  page after a React change, run `docker compose exec vite npm run build`.
 - **The watch build stops for good if its entry file disappears**, for example
   during a branch switch. It logs `Cannot resolve entry module` and never
   rebuilds, while the admin keeps showing the last good build. Fix it with
@@ -423,6 +501,10 @@ Built:
   and deleted, with the delete confirmed first
 - [x] Price preview — choose any product with Shopify's own picker, see its
   base price and each tier's price
+- [x] Tiers applied at checkout — a Shopify Function that reads the shop's
+  tiers from a discount metafield, tested with fixtures against the built
+  WebAssembly; Laravel creates the discount and rewrites the metafield on
+  every tier change
 - [x] API docs — generated OpenAPI at `/docs/api` with Scramble, local only
 - [x] Production image — `.dockerignore`, a start-up entrypoint (cache,
   wait for the database, migrate), a `/up` health check that includes the
@@ -436,6 +518,8 @@ Built:
 
 Not built yet:
 
+- [ ] A display name per tier, so checkout shows "Wholesale Gold" rather than
+  the raw tag
 - [ ] Infrastructure as code and a CI/CD pipeline for the AWS deployment
 - [ ] A custom domain with an ACM certificate on the load balancer
 
@@ -445,11 +529,10 @@ The exclusions are as considered as the build:
 
 | Excluded                                 | Why                                                                                                                       |
 | ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
-| Shopify Function for checkout discounts  | In production the discount has to execute at checkout, on Shopify's infrastructure — an app server cannot sit in that path. It means Rust/WASM and its own toolchain. This is the correct next piece, not an oversight. |
 | Theme app extension                      | A display concern on the storefront, separate from the pricing engine                                                     |
 | Webhooks (`app/uninstalled`, `customers/update`) | Needed for production hygiene — orphaned records on uninstall — but adds infrastructure without changing what the app demonstrates |
 | Billing API, GDPR webhooks, multi-store  | These only matter for public App Store distribution                                                                       |
-| Broad test coverage                      | Tests cover only the places where a bug would be a security hole or a silent failure: the OAuth HMAC check, session-token verification, the middleware's shop resolution, token refresh, the throttle retry, and `TierCalculator` — 0%, 100%, a fixed discount bigger than the price, and rounding at the half cent. Controllers, views and the happy path through Shopify are checked by hand against a development store. |
+| Broad test coverage                      | Tests cover only the places where a bug would be a security hole or a silent failure: the OAuth HMAC check, session-token verification, the middleware's shop resolution, token refresh, the throttle retry, `TierCalculator` — 0%, 100%, a fixed discount bigger than the price, and rounding at the half cent — and the checkout path: `TierDiscountConfig`, `TierDiscountSync` against faked Shopify answers, and the Function's fixtures. Controllers, views and the happy path through Shopify are checked by hand against a development store. |
 
 ## License
 
