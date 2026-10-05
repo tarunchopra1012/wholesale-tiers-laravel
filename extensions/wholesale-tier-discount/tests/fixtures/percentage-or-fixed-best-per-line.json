@@ -1,0 +1,109 @@
+{
+  "payload": {
+    "export": "cart-lines-discounts-generate-run",
+    "target": "cart.lines.discounts.generate.run",
+    "input": {
+      "cart": {
+        "buyerIdentity": {
+          "customer": {
+            "hasTags": [
+              {
+                "tag": "wholesale-silver",
+                "hasTag": true
+              },
+              {
+                "tag": "wholesale-five-off",
+                "hasTag": true
+              }
+            ]
+          }
+        },
+        "lines": [
+          {
+            "id": "gid://shopify/CartLine/0",
+            "cost": {
+              "amountPerQuantity": {
+                "amount": "100.0"
+              }
+            }
+          },
+          {
+            "id": "gid://shopify/CartLine/1",
+            "cost": {
+              "amountPerQuantity": {
+                "amount": "20.0"
+              }
+            }
+          }
+        ]
+      },
+      "discount": {
+        "discountClasses": [
+          "PRODUCT"
+        ],
+        "metafield": {
+          "jsonValue": {
+            "tags": [
+              "wholesale-silver",
+              "wholesale-five-off"
+            ],
+            "tiers": [
+              {
+                "tag": "wholesale-silver",
+                "type": "percentage",
+                "value": "10.00"
+              },
+              {
+                "tag": "wholesale-five-off",
+                "type": "fixed",
+                "value": "5.00"
+              }
+            ]
+          }
+        }
+      }
+    },
+    "output": {
+      "operations": [
+        {
+          "productDiscountsAdd": {
+            "candidates": [
+              {
+                "message": "wholesale-silver",
+                "targets": [
+                  {
+                    "cartLine": {
+                      "id": "gid://shopify/CartLine/0"
+                    }
+                  }
+                ],
+                "value": {
+                  "percentage": {
+                    "value": "10.00"
+                  }
+                }
+              },
+              {
+                "message": "wholesale-five-off",
+                "targets": [
+                  {
+                    "cartLine": {
+                      "id": "gid://shopify/CartLine/1"
+                    }
+                  }
+                ],
+                "value": {
+                  "fixedAmount": {
+                    "amount": "5.00",
+                    "appliesToEachItem": true
+                  }
+                }
+              }
+            ],
+            "selectionStrategy": "ALL"
+          }
+        }
+      ]
+    }
+  }
+}

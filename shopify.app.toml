@@ -1,0 +1,20 @@
+# Learn more about configuring your app at https://shopify.dev/docs/apps/tools/cli/configuration
+
+client_id = "61c0dd61069efbd97987f0dfdb4a972d"
+name = "wholesale-tiers"
+application_url = "https://last-tiffany-captain-composer.trycloudflare.com"
+embedded = true
+
+[access_scopes]
+# Learn more at https://shopify.dev/docs/apps/tools/cli/configuration#access_scopes
+scopes = "read_customers,read_products,write_discounts"
+optional_scopes = [ ]
+use_legacy_install_flow = true
+
+[auth]
+redirect_urls = [
+  "https://last-tiffany-captain-composer.trycloudflare.com/auth/callback"
+]
+
+[webhooks]
+api_version = "2026-10"

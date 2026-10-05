@@ -1,0 +1,26 @@
+query CartInput($tags: [String!]) {
+  cart {
+    buyerIdentity {
+      customer {
+        hasTags(tags: $tags) {
+          tag
+          hasTag
+        }
+      }
+    }
+    lines {
+      id
+      cost {
+        amountPerQuantity {
+          amount
+        }
+      }
+    }
+  }
+  discount {
+    discountClasses
+    metafield(namespace: "$app:wholesale-tiers", key: "function-configuration") {
+      jsonValue
+    }
+  }
+}

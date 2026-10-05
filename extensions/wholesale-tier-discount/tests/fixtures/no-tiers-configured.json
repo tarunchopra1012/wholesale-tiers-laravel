@@ -1,0 +1,39 @@
+{
+  "payload": {
+    "export": "cart-lines-discounts-generate-run",
+    "target": "cart.lines.discounts.generate.run",
+    "input": {
+      "cart": {
+        "buyerIdentity": {
+          "customer": {
+            "hasTags": []
+          }
+        },
+        "lines": [
+          {
+            "id": "gid://shopify/CartLine/0",
+            "cost": {
+              "amountPerQuantity": {
+                "amount": "729.95"
+              }
+            }
+          }
+        ]
+      },
+      "discount": {
+        "discountClasses": [
+          "PRODUCT"
+        ],
+        "metafield": {
+          "jsonValue": {
+            "tags": [],
+            "tiers": []
+          }
+        }
+      }
+    },
+    "output": {
+      "operations": []
+    }
+  }
+}

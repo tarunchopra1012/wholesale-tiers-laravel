@@ -1,0 +1,49 @@
+{
+  "payload": {
+    "export": "cart-lines-discounts-generate-run",
+    "target": "cart.lines.discounts.generate.run",
+    "input": {
+      "cart": {
+        "buyerIdentity": null,
+        "lines": [
+          {
+            "id": "gid://shopify/CartLine/0",
+            "cost": {
+              "amountPerQuantity": {
+                "amount": "729.95"
+              }
+            }
+          }
+        ]
+      },
+      "discount": {
+        "discountClasses": [
+          "PRODUCT"
+        ],
+        "metafield": {
+          "jsonValue": {
+            "tags": [
+              "wholesale-gold",
+              "wholesale-silver"
+            ],
+            "tiers": [
+              {
+                "tag": "wholesale-gold",
+                "type": "percentage",
+                "value": "20.00"
+              },
+              {
+                "tag": "wholesale-silver",
+                "type": "percentage",
+                "value": "10.00"
+              }
+            ]
+          }
+        }
+      }
+    },
+    "output": {
+      "operations": []
+    }
+  }
+}

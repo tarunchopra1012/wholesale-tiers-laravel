@@ -1,0 +1,23 @@
+api_version = "2026-07"
+
+[[extensions]]
+name = "t:name"
+handle = "wholesale-tier-discount"
+type = "function"
+uid = "d7d5d320-4bcc-b524-89bb-4ea783ab93bcb693adcb"
+description = "t:description"
+
+  [[extensions.targeting]]
+  target = "cart.lines.discounts.generate.run"
+  input_query = "src/cart_lines_discounts_generate_run.graphql"
+  export = "cart-lines-discounts-generate-run"
+
+  # Shopify fills the input query's $tags from the "tags" key of this
+  # metafield on the discount. Laravel writes it: TierDiscountSync.php.
+  [extensions.input.variables]
+  namespace = "$app:wholesale-tiers"
+  key = "function-configuration"
+
+  [extensions.build]
+  command = ""
+  path = "dist/function.wasm"
