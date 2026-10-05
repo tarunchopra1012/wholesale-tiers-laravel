@@ -17,18 +17,22 @@ against them. This app closes that gap.
 | Embedding         | App Bridge (CDN script)                      | latest      |
 | Database          | MySQL                                        | 8.0         |
 | Shopify Admin API | GraphQL                                      | **2026-07** |
+| Checkout logic    | Shopify Function (JavaScript → WebAssembly)  |             |
+| Function tooling  | Shopify CLI, on the host under Node 22+      | 4.x         |
 | Runtime           | Docker Compose (dev), container image (prod) |             |
 
 ## Architecture rules — do not violate these
 
 1. **The Shopify access token NEVER reaches the browser.** All Admin API calls
    originate in Laravel. If you find yourself writing a Shopify GraphQL query in
-   React, stop — it belongs in a Laravel service.
+   React, stop — it belongs in a Laravel service. The checkout Function has no
+   token either and makes no API calls: Laravel feeds it through a metafield.
 
 2. **React talks to Laravel over plain REST JSON.** We are not building a
    GraphQL server. Do not add Lighthouse, do not add Apollo Server. The only
    GraphQL in this codebase is the outbound query string Laravel sends to
-   Shopify.
+   Shopify, and the Function's input query in `extensions/`, which Shopify
+   runs, not us.
 
 3. **Every API request from the frontend carries an ID token.** App Bridge
    attaches `Authorization: Bearer <jwt>` automatically to same-origin `fetch`
@@ -70,8 +74,13 @@ app/
     ShopifyGraphQLClient.php    thin HTTP wrapper, retries on 429
     CustomerQuery.php           query strings + response mapping
     ProductQuery.php
+    TierDiscountSync.php        creates the tier discount once, then writes its metafield
   Support/
     TierCalculator.php          pure pricing logic, no I/O, unit-testable
+    TierDiscountConfig.php      pure: a shop's tiers → the JSON the Function reads
+extensions/
+  wholesale-tier-discount/      the checkout Function; runs on Shopify, not here.
+                                Own package.json, built and uploaded by Shopify CLI
 resources/js/
   main.jsx               entry; not app.jsx — macOS can't hold it beside App.jsx
   App.jsx
@@ -80,6 +89,7 @@ resources/js/
 routes/
   api.php                all /api/* routes, behind the session-token middleware
   web.php                OAuth install + callback, and the SPA catch-all
+shopify.app.toml         Shopify CLI's description of the app; `deploy` releases from it
 ```
 
 ## Database
@@ -87,7 +97,8 @@ routes/
 ```
 shops
   id, shop_domain (unique), access_token (encrypted cast), scopes,
-  installed_at, uninstalled_at nullable, timestamps
+  installed_at, uninstalled_at nullable,
+  tier_discount_id nullable, tier_discount_synced_at nullable, timestamps
 
 tier_settings
   id, shop_id (fk, cascade), tag, discount_type enum(percentage,fixed),
@@ -111,6 +122,17 @@ creates a sync problem we do not need.
 - **Pagination is cursor-based.** Use `pageInfo { hasNextPage endCursor }` and
   `after:`, never numeric offsets.
 - **The app renders in an iframe.** Never send `X-Frame-Options`.
+- **Scopes are `read_customers,read_products,write_discounts`.** A new scope
+  only takes effect after the store approves it again through `/auth`.
+- **Laravel and the Function share one thing: a JSON metafield** on the tier
+  discount, namespace `$app:wholesale-tiers`, key `function-configuration`:
+  `{"tags": [...], "tiers": [{"tag", "type", "value"}]}`. `value` is a decimal
+  string. Laravel always writes the whole list, never a single change.
+- **Never run `shopify app dev`.** It recreates the dev preview that broke
+  installs (DECISIONS.md, 21 Sep).
+- **`shopify app deploy` releases a version built from `shopify.app.toml`.**
+  A stale tunnel URL in the toml overwrites the right one. Check the URLs
+  before every deploy and the Dev Dashboard's newest version after.
 
 ### A query that is verified to work
 
@@ -160,11 +182,11 @@ Use it as the shape reference for other queries.
 
 Out of scope for this build. If a task seems to need one of these, stop and ask:
 
-- Shopify Functions (checkout discounts) — the real production path, but Rust/WASM
 - Theme app extensions
 - Webhooks
 - Billing API, GDPR webhooks, multi-store support
-- A test suite beyond `TierCalculator`
+- A test suite beyond `TierCalculator`, `TierDiscountConfig`,
+  `TierDiscountSync` and the Function's fixtures
 
 ## Working style
 
