@@ -68,7 +68,7 @@ final class TierSettingController extends Controller
         /** @var Shop $shop */
         $shop = $request->attributes->get('shop');
 
-        /** @var list<array{id: int, tag: string, discount_type: string, discount_value: int|float|string}> $changes */
+        /** @var list<array{id: int, tag: string, discount_type: string, discount_value: int|float|string, badge_tone: string}> $changes */
         $changes = $request->validated('tiers');
 
         try {
@@ -85,6 +85,7 @@ final class TierSettingController extends Controller
                         'tag' => $change['tag'],
                         'discount_type' => $change['discount_type'],
                         'discount_value' => $change['discount_value'],
+                        'badge_tone' => $change['badge_tone'],
                     ]);
                 }
             });
