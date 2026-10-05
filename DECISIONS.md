@@ -943,3 +943,18 @@ Settings page says and what `TierCalculator` previews.
 
 **Not yet seen:** a silver customer, a guest and an untagged customer at
 checkout, and a save after the discount is deleted in the admin.
+
+## 5 Oct 2026 — a badge colour per tier
+
+Every tier's badge on the Customers page was blue, so gold, silver and
+platinum could only be told apart by reading. Each tier now has a
+`badge_tone`, chosen on the Settings page.
+
+It is a list of seven colours, not a free colour picker. The values are the
+tones of Polaris's `Badge`, so the browser passes one straight to the
+component. Any hex colour would need a badge drawn with custom CSS, which
+CLAUDE.md rules out, and could be unreadable against its own text.
+
+The colour is not sent to the checkout Function: it only affects the admin.
+
+**Not yet seen:** the Select and the coloured badges inside the admin.
