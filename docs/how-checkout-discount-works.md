@@ -15,16 +15,16 @@ discount at checkout. For how the admin pages are authenticated, see
 
 The app has two programs, and they never call each other.
 
-|                     | **Laravel app**                             | **Checkout Function**                              |
-| ------------------- | ------------------------------------------- | -------------------------------------------------- |
-| Runs on             | Our server (Docker locally, a container in production) | Shopify's servers, as WebAssembly       |
-| Runs when           | The merchant uses the app in the admin      | A customer's cart or checkout is priced            |
-| Written in          | PHP                                         | JavaScript, compiled by Shopify CLI                |
-| Source              | `app/`                                      | `extensions/wholesale-tier-discount/`              |
-| Released by         | Building and deploying the container image  | `shopify app deploy`                               |
-| Can call Shopify's API | Yes, with the shop's access token        | No. It has no token and no network                 |
-| Can read our database  | Yes                                      | No                                                 |
-| Knows the customer  | Only by asking the Admin API                | Yes: Shopify hands it the cart and the buyer       |
+|                        | **Laravel app**                                        | **Checkout Function**                        |
+| ---------------------- | ------------------------------------------------------ | -------------------------------------------- |
+| Runs on                | Our server (Docker locally, a container in production) | Shopify's servers, as WebAssembly            |
+| Runs when              | The merchant uses the app in the admin                 | A customer's cart or checkout is priced      |
+| Written in             | PHP                                                    | JavaScript, compiled by Shopify CLI          |
+| Source                 | `app/`                                                 | `extensions/wholesale-tier-discount/`        |
+| Released by            | Building and deploying the container image             | `shopify app deploy`                         |
+| Can call Shopify's API | Yes, with the shop's access token                      | No. It has no token and no network           |
+| Can read our database  | Yes                                                    | No                                           |
+| Knows the customer     | Only by asking the Admin API                           | Yes: Shopify hands it the cart and the buyer |
 
 Laravel knows the tiers but is not there at checkout. The Function is there at
 checkout but knows nothing. So Laravel leaves a note where the Function can
@@ -82,23 +82,23 @@ Three things have to exist in the store before a discount appears:
 
 ## 3. The contract: one metafield
 
-| | |
-| --- | --- |
-| Owner | The "Wholesale tiers" automatic discount |
-| Namespace | `$app:wholesale-tiers` |
-| Key | `function-configuration` |
-| Type | `json` |
-| Written by | [TierDiscountSync.php](../app/Services/Shopify/TierDiscountSync.php) |
-| Shape built by | [TierDiscountConfig.php](../app/Support/TierDiscountConfig.php) |
-| Read by | [cart_lines_discounts_generate_run.js](../extensions/wholesale-tier-discount/src/cart_lines_discounts_generate_run.js) |
+|                |                                                                                                                        |
+| -------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| Owner          | The "Wholesale tiers" automatic discount                                                                               |
+| Namespace      | `$app:wholesale-tiers`                                                                                                 |
+| Key            | `function-configuration`                                                                                               |
+| Type           | `json`                                                                                                                 |
+| Written by     | [TierDiscountSync.php](../app/Services/Shopify/TierDiscountSync.php)                                                   |
+| Shape built by | [TierDiscountConfig.php](../app/Support/TierDiscountConfig.php)                                                        |
+| Read by        | [cart_lines_discounts_generate_run.js](../extensions/wholesale-tier-discount/src/cart_lines_discounts_generate_run.js) |
 
 ```json
 {
-  "tags": ["wholesale-gold", "wholesale-silver"],
-  "tiers": [
-    { "tag": "wholesale-gold", "type": "percentage", "value": "20.00" },
-    { "tag": "wholesale-silver", "type": "percentage", "value": "10.00" }
-  ]
+    "tags": ["wholesale-gold", "wholesale-silver"],
+    "tiers": [
+        { "tag": "wholesale-gold", "type": "percentage", "value": "20.00" },
+        { "tag": "wholesale-silver", "type": "percentage", "value": "10.00" }
+    ]
 }
 ```
 
@@ -221,11 +221,11 @@ output pairs, run against the built WebAssembly.
 
 The tier rule exists in two places because it runs in two places:
 
-| | Price preview | Checkout |
-| --- | --- | --- |
-| Code | `TierCalculator` (PHP) | The Function hands Shopify a percentage or amount; Shopify does the arithmetic |
-| Purpose | Show the merchant what a tier will pay | Charge it |
-| Rounding | Ours: final price rounded half-up to the cent | Shopify's |
+|          | Price preview                                 | Checkout                                                                       |
+| -------- | --------------------------------------------- | ------------------------------------------------------------------------------ |
+| Code     | `TierCalculator` (PHP)                        | The Function hands Shopify a percentage or amount; Shopify does the arithmetic |
+| Purpose  | Show the merchant what a tier will pay        | Charge it                                                                      |
+| Rounding | Ours: final price rounded half-up to the cent | Shopify's                                                                      |
 
 They can differ by a cent at an exact half cent. The preview is a preview;
 checkout is the price.
@@ -234,15 +234,15 @@ checkout is the price.
 
 ## 7. What can go wrong, and what happens
 
-| Situation | Result |
-| --- | --- |
-| Tiers exist but nobody has pressed Save since this feature shipped | No discount in the store, so no discount at checkout. One Save fixes it |
-| Shopify is down or refuses during a save | Tiers saved, 502 shown, checkout keeps the previous tiers until the next successful save |
-| The merchant deletes "Wholesale tiers" in Discounts | No discount at checkout until the next save, which creates it again |
-| The merchant deactivates the discount | No discount at checkout. The sync leaves it deactivated: that is the merchant's choice |
-| A new Function is deployed with a different metafield shape, but nobody saves | The Function reads the old shape. Press Save after such a deploy |
-| The Function throws | Shopify applies no discount for that run. Checkout still works |
-| Two saves at the same moment on a shop with no discount yet | Both could create a discount. Not guarded; a POC limit |
+| Situation                                                                     | Result                                                                                   |
+| ----------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
+| Tiers exist but nobody has pressed Save since this feature shipped            | No discount in the store, so no discount at checkout. One Save fixes it                  |
+| Shopify is down or refuses during a save                                      | Tiers saved, 502 shown, checkout keeps the previous tiers until the next successful save |
+| The merchant deletes "Wholesale tiers" in Discounts                           | No discount at checkout until the next save, which creates it again                      |
+| The merchant deactivates the discount                                         | No discount at checkout. The sync leaves it deactivated: that is the merchant's choice   |
+| A new Function is deployed with a different metafield shape, but nobody saves | The Function reads the old shape. Press Save after such a deploy                         |
+| The Function throws                                                           | Shopify applies no discount for that run. Checkout still works                           |
+| Two saves at the same moment on a shop with no discount yet                   | Both could create a discount. Not guarded; a POC limit                                   |
 
 ---
 
