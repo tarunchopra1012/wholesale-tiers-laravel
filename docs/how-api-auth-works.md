@@ -15,15 +15,15 @@ key stays alive, and what the merchant sees when it can't.
 Two tokens do all the work. They travel in different directions and never
 meet.
 
-|                    | **ID token**                                 | **Access token**                                  |
-| ------------------ | -------------------------------------------- | ------------------------------------------------- |
-| Travels            | Browser → Laravel                            | Laravel → Shopify                                 |
-| Answers            | "Which store is this click from?"            | "Is Laravel allowed to read this store's data?"   |
-| Made by            | App Bridge, in the browser, when needed      | Shopify: at install, then at every refresh        |
-| Lives              | About 60 seconds                             | 1 hour. A refresh token (90 days) gets a new one  |
-| Stored             | Nowhere. Made when needed, then thrown away  | The `shops` row in MySQL, encrypted               |
-| Is it a JWT?       | Yes. Anyone can read it; nobody can edit it  | No. A random string only Shopify can look up      |
-| Reaches the browser | It starts there                             | **Never**                                         |
+|                     | **ID token**                                | **Access token**                                 |
+| ------------------- | ------------------------------------------- | ------------------------------------------------ |
+| Travels             | Browser → Laravel                           | Laravel → Shopify                                |
+| Answers             | "Which store is this click from?"           | "Is Laravel allowed to read this store's data?"  |
+| Made by             | App Bridge, in the browser, when needed     | Shopify: at install, then at every refresh       |
+| Lives               | About 60 seconds                            | 1 hour. A refresh token (90 days) gets a new one |
+| Stored              | Nowhere. Made when needed, then thrown away | The `shops` row in MySQL, encrypted              |
+| Is it a JWT?        | Yes. Anyone can read it; nobody can edit it | No. A random string only Shopify can look up     |
+| Reaches the browser | It starts there                             | **Never**                                        |
 
 Think of an office building. The ID token is a visitor badge printed at the
 front desk each time you walk in. It says who you are, and it stops working
@@ -39,7 +39,7 @@ The app has one HTML page, [app.blade.php](../resources/views/app.blade.php).
 Two lines in its `<head>` set up the whole browser side:
 
 ```html
-<meta name="shopify-api-key" content="61c0dd61…">
+<meta name="shopify-api-key" content="61c0dd61…" />
 <script src="https://cdn.shopify.com/shopifycloud/app-bridge.js"></script>
 ```
 
@@ -77,16 +77,16 @@ iframe without asking the server anything. No request, no token, no check.
 Authentication happens **per `fetch`, not per screen.** A screen change only
 matters because the new screen usually fetches its data when it appears.
 
-| What you do                           | What reaches Laravel                                   | Does Laravel then call Shopify? |
-| ------------------------------------- | ------------------------------------------------------ | ------------------------------- |
-| Open the app in the admin             | `GET /`, the HTML page. No token: the page holds no secrets | No                          |
-| Customers screen appears              | `GET /api/tiers` and `GET /api/customers`              | `/customers` yes, `/tiers` no   |
-| Change the tier filter, or Next page  | `GET /api/customers?tier=…&after=…`                    | Yes                             |
-| Click "Tier settings"                 | Nothing. React Router only                             | —                               |
-| Settings screen appears               | `GET /api/tiers`                                       | No. Tiers live in MySQL         |
-| Save, add or delete a tier            | `PUT`, `POST` or `DELETE` on `/api/tiers`              | No                              |
-| Preview screen appears                | `GET /api/products?limit=1`, then `GET /api/preview?product_id=…` | Yes                  |
-| Click "Choose product"                | Nothing. The admin draws its own picker (`shopify.resourcePicker`) | —                   |
+| What you do                          | What reaches Laravel                                               | Does Laravel then call Shopify? |
+| ------------------------------------ | ------------------------------------------------------------------ | ------------------------------- |
+| Open the app in the admin            | `GET /`, the HTML page. No token: the page holds no secrets        | No                              |
+| Customers screen appears             | `GET /api/tiers` and `GET /api/customers`                          | `/customers` yes, `/tiers` no   |
+| Change the tier filter, or Next page | `GET /api/customers?tier=…&after=…`                                | Yes                             |
+| Click "Tier settings"                | Nothing. React Router only                                         | —                               |
+| Settings screen appears              | `GET /api/tiers`                                                   | No. Tiers live in MySQL         |
+| Save, add or delete a tier           | `PUT`, `POST` or `DELETE` on `/api/tiers`                          | No                              |
+| Preview screen appears               | `GET /api/products?limit=1`, then `GET /api/preview?product_id=…`  | Yes                             |
+| Click "Choose product"               | Nothing. The admin draws its own picker (`shopify.resourcePicker`) | —                               |
 
 Every row that reaches `/api` goes through the same checks (section 4), each
 with its own ID token.
@@ -194,12 +194,12 @@ Install asks Shopify for an **expiring** token (`expiring=1`, step 5 of the
 install doc). So the `shops` row holds two tokens. Live values from your dev
 store, in UTC as stored:
 
-| Column                     | Value                   | Meaning                                    |
-| -------------------------- | ----------------------- | ------------------------------------------ |
-| `access_token`             | `eyJpdiI6…` (encrypted) | The key. Dies 1 hour after it's issued     |
-| `access_token_expires_at`  | `2026-09-30 15:17:13`   | 1 hour after the last refresh (14:17:13)   |
-| `refresh_token`            | `eyJpdiI6…` (encrypted) | Gets a new key. Dies after 90 days         |
-| `refresh_token_expires_at` | `2026-12-29 14:17:13`   | 90 days after the last refresh             |
+| Column                     | Value                   | Meaning                                  |
+| -------------------------- | ----------------------- | ---------------------------------------- |
+| `access_token`             | `eyJpdiI6…` (encrypted) | The key. Dies 1 hour after it's issued   |
+| `access_token_expires_at`  | `2026-09-30 15:17:13`   | 1 hour after the last refresh (14:17:13) |
+| `refresh_token`            | `eyJpdiI6…` (encrypted) | Gets a new key. Dies after 90 days       |
+| `refresh_token_expires_at` | `2026-12-29 14:17:13`   | 90 days after the last refresh           |
 
 Nobody — not React, not the merchant — does anything to keep the key alive.
 Every Admin API call first asks
@@ -259,11 +259,11 @@ merchant through OAuth again.
 
 **What triggers it:**
 
-| Where it's noticed                            | What Shopify said                                 | Why it's final                        |
-| --------------------------------------------- | ------------------------------------------------- | ------------------------------------- |
-| `OAuthService`, refreshing                    | `401 {"error":"invalid_request"}`                 | Refresh token expired or replaced     |
-| `OAuthService`, before refreshing             | Nothing. The row has an expiry but no refresh token | Nothing to refresh with             |
-| `ShopifyGraphQLClient`, calling the Admin API | `401`                                             | The token was fresh, so it was revoked |
+| Where it's noticed                            | What Shopify said                                   | Why it's final                         |
+| --------------------------------------------- | --------------------------------------------------- | -------------------------------------- |
+| `OAuthService`, refreshing                    | `401 {"error":"invalid_request"}`                   | Refresh token expired or replaced      |
+| `OAuthService`, before refreshing             | Nothing. The row has an expiry but no refresh token | Nothing to refresh with                |
+| `ShopifyGraphQLClient`, calling the Admin API | `401`                                               | The token was fresh, so it was revoked |
 
 All three throw
 [ReauthorizationRequiredException](../app/Services/Shopify/ReauthorizationRequiredException.php),
@@ -343,11 +343,11 @@ it's one wasted call to Shopify per request.
 
 ## 8. Three strings that start with `eyJ`. Only one is a JWT.
 
-| Where you see it                                 | Starts with  | What it really is                                  | jwt.io reads it? |
-| ------------------------------------------------ | ------------ | -------------------------------------------------- | ---------------- |
-| `laravel-session` cookie                         | `eyJpdiI6`   | Laravel's encryption envelope around a session ID  | No               |
-| `access_token` and `refresh_token` in `shops`    | `eyJpdiI6`   | The same envelope, around Shopify's token          | No               |
-| `Authorization: Bearer …` on an `/api` request   | `eyJhbGciOi` | A JWT: header `.` payload `.` signature            | Yes              |
+| Where you see it                               | Starts with  | What it really is                                 | jwt.io reads it? |
+| ---------------------------------------------- | ------------ | ------------------------------------------------- | ---------------- |
+| `laravel-session` cookie                       | `eyJpdiI6`   | Laravel's encryption envelope around a session ID | No               |
+| `access_token` and `refresh_token` in `shops`  | `eyJpdiI6`   | The same envelope, around Shopify's token         | No               |
+| `Authorization: Bearer …` on an `/api` request | `eyJhbGciOi` | A JWT: header `.` payload `.` signature           | Yes              |
 
 Why they all start alike: `eyJ` is what base64 turns `{"` into. Anything that
 is base64-encoded JSON starts with `eyJ`. The next few characters tell them
