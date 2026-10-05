@@ -139,7 +139,7 @@ shops
 
 tier_settings
   id, shop_id (fk, cascade), tag, discount_type enum(percentage,fixed),
-  discount_value decimal(10,2), timestamps
+  discount_value decimal(10,2), badge_tone (a Polaris Badge tone), timestamps
   unique(shop_id, tag)
 ```
 
