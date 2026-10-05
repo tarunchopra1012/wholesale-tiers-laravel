@@ -20,6 +20,8 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
     'scopes',
     'installed_at',
     'uninstalled_at',
+    'tier_discount_id',
+    'tier_discount_synced_at',
 ])]
 #[Hidden(['access_token', 'refresh_token'])]
 class Shop extends Model
@@ -41,6 +43,7 @@ class Shop extends Model
             'refresh_token_expires_at' => 'datetime',
             'installed_at' => 'datetime',
             'uninstalled_at' => 'datetime',
+            'tier_discount_synced_at' => 'datetime',
         ];
     }
 
