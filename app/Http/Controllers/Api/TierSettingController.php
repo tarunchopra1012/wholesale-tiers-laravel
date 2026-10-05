@@ -9,6 +9,10 @@ use App\Http\Requests\StoreTierSettingRequest;
 use App\Http\Requests\UpdateTierSettingsRequest;
 use App\Http\Resources\TierSettingResource;
 use App\Models\Shop;
+use App\Services\Shopify\OAuthService;
+use App\Services\Shopify\ShopifyGraphQLClient;
+use App\Services\Shopify\TierDiscountSync;
+use App\Support\TierDiscountConfig;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
@@ -35,7 +39,7 @@ final class TierSettingController extends Controller
      *
      * @status 201
      */
-    public function store(StoreTierSettingRequest $request): TierSettingResource
+    public function store(StoreTierSettingRequest $request, OAuthService $oauth): TierSettingResource
     {
         /** @var Shop $shop */
         $shop = $request->attributes->get('shop');
@@ -49,6 +53,8 @@ final class TierSettingController extends Controller
             throw ValidationException::withMessages(['tag' => 'Another tier already uses this tag.']);
         }
 
+        $this->syncCheckout($shop, $oauth);
+
         // A resource for a model created in this request answers 201.
         return new TierSettingResource($tier);
     }
@@ -57,7 +63,7 @@ final class TierSettingController extends Controller
      * PUT /api/tiers — change the tag or discount of some or all of the
      * shop's tiers, matched by id. Answers with every tier, as GET does.
      */
-    public function update(UpdateTierSettingsRequest $request): AnonymousResourceCollection
+    public function update(UpdateTierSettingsRequest $request, OAuthService $oauth): AnonymousResourceCollection
     {
         /** @var Shop $shop */
         $shop = $request->attributes->get('shop');
@@ -90,6 +96,8 @@ final class TierSettingController extends Controller
             ]);
         }
 
+        $this->syncCheckout($shop, $oauth);
+
         return TierSettingResource::collection($shop->tierSettings()->orderBy('tag')->get());
     }
 
@@ -97,7 +105,7 @@ final class TierSettingController extends Controller
      * DELETE /api/tiers/{id} — remove a tier. Customers keep their tags in
      * Shopify; the app just stops treating that tag as a tier.
      */
-    public function destroy(Request $request, int $id): Response
+    public function destroy(Request $request, OAuthService $oauth, int $id): Response
     {
         /** @var Shop $shop */
         $shop = $request->attributes->get('shop');
@@ -108,6 +116,18 @@ final class TierSettingController extends Controller
 
         $tier->delete();
 
+        $this->syncCheckout($shop, $oauth);
+
         return response()->noContent();
+    }
+
+    /**
+     * Sends the shop's tiers, as they now are, to the checkout Function.
+     * After the save, never inside its transaction: a slow Shopify must not
+     * hold database locks, and a failed sync must not undo the save.
+     */
+    private function syncCheckout(Shop $shop, OAuthService $oauth): void
+    {
+        (new TierDiscountSync(new ShopifyGraphQLClient($shop, $oauth), new TierDiscountConfig))->sync($shop);
     }
 }
