@@ -56,6 +56,7 @@ final class UpdateTierSettingsRequest extends FormRequest
                     is_array($tier) ? ($tier['discount_type'] ?? null) : null,
                 ),
             ),
+            'tiers.*.badge_tone' => TierRules::badgeTone(),
         ];
     }
 
@@ -81,6 +82,7 @@ final class UpdateTierSettingsRequest extends FormRequest
             'tiers.*.tag' => 'tag',
             'tiers.*.discount_type' => 'discount type',
             'tiers.*.discount_value' => 'discount',
+            'tiers.*.badge_tone' => 'badge colour',
         ];
     }
 

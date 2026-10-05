@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Http\Requests;
 
+use App\Enums\BadgeTone;
 use App\Enums\DiscountType;
 use App\Models\Shop;
 use Illuminate\Validation\Rule;
@@ -46,6 +47,14 @@ final class TierRules
     public static function discountType(): array
     {
         return ['required', Rule::enum(DiscountType::class)];
+    }
+
+    /**
+     * @return list<mixed>
+     */
+    public static function badgeTone(): array
+    {
+        return ['required', Rule::enum(BadgeTone::class)];
     }
 
     /**

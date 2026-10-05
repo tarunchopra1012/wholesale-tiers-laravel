@@ -27,6 +27,8 @@ final class TierSettingResource extends JsonResource
             // A string such as "25.00", straight from the decimal:2 cast, so
             // the browser gets exactly what's stored.
             'discount_value' => $this->resource->discount_value,
+            // A Polaris Badge tone, e.g. "success". See App\Enums\BadgeTone.
+            'badge_tone' => $this->resource->badge_tone->value,
         ];
     }
 }
