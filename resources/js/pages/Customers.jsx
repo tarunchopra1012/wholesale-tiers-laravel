@@ -139,7 +139,7 @@ export default function Customers() {
                             label="Tier"
                             options={[
                                 ALL_CUSTOMERS,
-                                ...tiers.map((t) => ({ label: t.tag, value: t.tag })),
+                                ...tiers.map((t) => ({ label: t.name ?? t.tag, value: t.tag })),
                             ]}
                             value={tier}
                             onChange={changeTier}
@@ -229,7 +229,7 @@ function TierBadges({ tags, tiers }) {
         <InlineStack gap="100">
             {matches.map((tier) => (
                 <Badge key={tier.id} tone={tier.badge_tone}>
-                    {tier.tag}
+                    {tier.name ?? tier.tag}
                 </Badge>
             ))}
         </InlineStack>

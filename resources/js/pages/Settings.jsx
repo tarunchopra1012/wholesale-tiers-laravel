@@ -35,12 +35,12 @@ const TONE_OPTIONS = [
     { label: 'Grey', value: 'new' },
 ];
 
-const NEW_TIER = { tag: '', discount_type: 'percentage', discount_value: '', badge_tone: 'info' };
+const NEW_TIER = { tag: '', name: '', discount_type: 'percentage', discount_value: '', badge_tone: 'info' };
 
 // The fields that show their own error. Any other 422 key — a tier that was
 // deleted in another window, say — has nowhere to show, so it goes in the
 // banner.
-const FIELD_ERROR = /^tiers\.\d+\.(tag|discount_type|discount_value|badge_tone)$/;
+const FIELD_ERROR = /^tiers\.\d+\.(tag|name|discount_type|discount_value|badge_tone)$/;
 
 export default function Settings() {
     const navigate = useNavigate();
@@ -215,7 +215,7 @@ export default function Settings() {
                         <BlockStack gap="400">
                             <InlineStack align="space-between" blockAlign="center">
                                 {/* The badge as the Customers page will show it. */}
-                                <Badge tone={tier.badge_tone}>{tier.tag || 'Untitled tier'}</Badge>
+                                <Badge tone={tier.badge_tone}>{tier.name || tier.tag || 'Untitled tier'}</Badge>
                                 <Button variant="plain" tone="critical" onClick={() => askDelete(tier)}>
                                     Delete
                                 </Button>
@@ -274,7 +274,7 @@ export default function Settings() {
             <Modal
                 open={deleting !== null}
                 onClose={() => setDeleting(null)}
-                title={`Delete ${deleting?.tag || 'this tier'}?`}
+                title={`Delete ${deleting?.name || deleting?.tag || 'this tier'}?`}
                 primaryAction={{
                     content: 'Delete tier',
                     destructive: true,
@@ -317,6 +317,16 @@ function TierFields({ tier, onChange, error, tagHelp }) {
                 helpText={tagHelp}
                 autoComplete="off"
                 error={error('tag')}
+            />
+            <TextField
+                label="Name"
+                // Null from the server when the tier has no name.
+                value={tier.name ?? ''}
+                onChange={(value) => onChange('name', value)}
+                helpText="Shown to customers at checkout, and here in the app. Leave it empty to show the tag."
+                maxLength={60}
+                autoComplete="off"
+                error={error('name')}
             />
             <FormLayout.Group>
                 <Select

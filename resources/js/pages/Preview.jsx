@@ -193,7 +193,7 @@ function PriceTable({ loading, preview }) {
         // Customers page calls them Retail too.
         ['Retail', '—', money(product.price_cents / 100, product.currency)],
         ...tiers.map((tier) => [
-            tier.tag,
+            tier.name ?? tier.tag,
             discount(tier, product.currency),
             money(tier.final_price_cents / 100, product.currency),
         ]),
