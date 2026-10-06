@@ -23,6 +23,8 @@ final class TierSettingResource extends JsonResource
             // once the tag itself can change.
             'id' => $this->resource->id,
             'tag' => $this->resource->tag,
+            // Null when the merchant gave none; the pages then show the tag.
+            'name' => $this->resource->name,
             'discount_type' => $this->resource->discount_type->value,
             // A string such as "25.00", straight from the decimal:2 cast, so
             // the browser gets exactly what's stored.

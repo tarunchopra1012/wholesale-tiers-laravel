@@ -28,6 +28,7 @@ final class StoreTierSettingRequest extends FormRequest
 
         return [
             'tag' => TierRules::tag($shop),
+            'name' => TierRules::name(),
             'discount_type' => TierRules::discountType(),
             'discount_value' => TierRules::discountValue($this->input('discount_type')),
             'badge_tone' => TierRules::badgeTone(),

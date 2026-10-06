@@ -60,7 +60,7 @@ final class TierSettingController extends Controller
     }
 
     /**
-     * PUT /api/tiers — change the tag or discount of some or all of the
+     * PUT /api/tiers — change the tag, name or discount of some or all of the
      * shop's tiers, matched by id. Answers with every tier, as GET does.
      */
     public function update(UpdateTierSettingsRequest $request, OAuthService $oauth): AnonymousResourceCollection
@@ -68,7 +68,7 @@ final class TierSettingController extends Controller
         /** @var Shop $shop */
         $shop = $request->attributes->get('shop');
 
-        /** @var list<array{id: int, tag: string, discount_type: string, discount_value: int|float|string, badge_tone: string}> $changes */
+        /** @var list<array{id: int, tag: string, name?: ?string, discount_type: string, discount_value: int|float|string, badge_tone: string}> $changes */
         $changes = $request->validated('tiers');
 
         try {
@@ -83,6 +83,8 @@ final class TierSettingController extends Controller
                 foreach ($changes as $change) {
                     $tiers[$change['id']]->update([
                         'tag' => $change['tag'],
+                        // Left out or emptied both mean "show the tag".
+                        'name' => $change['name'] ?? null,
                         'discount_type' => $change['discount_type'],
                         'discount_value' => $change['discount_value'],
                         'badge_tone' => $change['badge_tone'],

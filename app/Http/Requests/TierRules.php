@@ -42,6 +42,19 @@ final class TierRules
     }
 
     /**
+     * Optional: a tier without a name is shown by its tag. Customers read
+     * this at checkout, so it is kept short. It arrives already trimmed,
+     * and '' arrives as null, from Laravel's input clean-up.
+     *
+     * @return list<string>
+     */
+    public static function name(): array
+    {
+        // The column is a varchar(60).
+        return ['nullable', 'string', 'max:60'];
+    }
+
+    /**
      * @return list<mixed>
      */
     public static function discountType(): array
@@ -93,6 +106,7 @@ final class TierRules
             "{$prefix}tag.regex" => 'Use only letters, numbers, hyphens and underscores.',
             "{$prefix}tag.unique" => 'Another tier already uses this tag.',
             "{$prefix}tag.distinct" => "Two tiers can't use the same tag.",
+            "{$prefix}name.max" => 'Use at most 60 characters.',
             "{$prefix}discount_value.between" => 'A percentage must be between 0 and 100.',
             "{$prefix}discount_value.gt" => 'A fixed discount must be more than 0.',
             "{$prefix}discount_value.decimal" => 'Use at most two decimal places.',

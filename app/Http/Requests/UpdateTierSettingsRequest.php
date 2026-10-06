@@ -48,6 +48,7 @@ final class UpdateTierSettingsRequest extends FormRequest
                     'distinct:ignore_case',
                 ],
             ),
+            'tiers.*.name' => TierRules::name(),
             'tiers.*.discount_type' => TierRules::discountType(),
             // forEach hands each tier in as $tier, so the limits can follow
             // that tier's own type.
@@ -80,6 +81,7 @@ final class UpdateTierSettingsRequest extends FormRequest
         return [
             'tiers.*.id' => 'tier',
             'tiers.*.tag' => 'tag',
+            'tiers.*.name' => 'name',
             'tiers.*.discount_type' => 'discount type',
             'tiers.*.discount_value' => 'discount',
             'tiers.*.badge_tone' => 'badge colour',
