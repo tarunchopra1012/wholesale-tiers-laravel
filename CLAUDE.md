@@ -101,7 +101,7 @@ shops
   tier_discount_id nullable, tier_discount_synced_at nullable, timestamps
 
 tier_settings
-  id, shop_id (fk, cascade), tag, discount_type enum(percentage,fixed),
+  id, shop_id (fk, cascade), tag, name nullable, discount_type enum(percentage,fixed),
   discount_value decimal(10,2), badge_tone string default 'info', timestamps
   unique(shop_id, tag)
 ```
@@ -126,8 +126,10 @@ creates a sync problem we do not need.
   only takes effect after the store approves it again through `/auth`.
 - **Laravel and the Function share one thing: a JSON metafield** on the tier
   discount, namespace `$app:wholesale-tiers`, key `function-configuration`:
-  `{"tags": [...], "tiers": [{"tag", "type", "value"}]}`. `value` is a decimal
-  string. Laravel always writes the whole list, never a single change.
+  `{"tags": [...], "tiers": [{"tag", "name", "type", "value"}]}`. `value` is a
+  decimal string. `name` is what checkout shows; Laravel writes the tag there
+  when a tier has no name. Laravel always writes the whole list, never a
+  single change.
 - **Never run `shopify app dev`.** It recreates the dev preview that broke
   installs (DECISIONS.md, 21 Sep).
 - **`shopify app deploy` releases a version built from `shopify.app.toml`.**

@@ -65,7 +65,7 @@ for every customer and never phones the manager.
 │    input:  cart lines, the customer's tier tags, the metafield       │
 │    output: which lines get which discount                            │
 │                              ▼                                       │
-│  Checkout shows  WHOLESALE-GOLD (-$145.99)                           │
+│  Checkout shows  WHOLESALE GOLD (-$145.99)                           │
 │                                                                      │
 └──────────────────────────────────────────────────────────────────────┘
 ```
@@ -96,8 +96,8 @@ Three things have to exist in the store before a discount appears:
 {
     "tags": ["wholesale-gold", "wholesale-silver"],
     "tiers": [
-        { "tag": "wholesale-gold", "type": "percentage", "value": "20.00" },
-        { "tag": "wholesale-silver", "type": "percentage", "value": "10.00" }
+        { "tag": "wholesale-gold", "name": "Wholesale Gold", "type": "percentage", "value": "20.00" },
+        { "tag": "wholesale-silver", "name": "wholesale-silver", "type": "percentage", "value": "10.00" }
     ]
 }
 ```
@@ -105,6 +105,10 @@ Three things have to exist in the store before a discount appears:
 - **`tiers`** is what the Function prices with. `type` is `percentage` or
   `fixed`. `value` is a decimal string, straight from the database's
   `decimal(10,2)` column, so it never passes through a float.
+- **`name`** is the label the customer sees at checkout. It is always a
+  string: a tier with no name of its own, like silver above, goes out under
+  its tag. The Function still falls back to `tag` itself, for a metafield
+  written before names existed.
 - **`tags`** repeats the tags on purpose. The Function cannot read a
   customer's tag list; it can only ask "does this customer have these tags?",
   and it has to name them. Shopify fills the input query's `$tags` variable
@@ -209,7 +213,8 @@ Rules the Function follows:
   test it.
 - **A fixed amount comes off each unit**, which is what the Settings page says
   and what the Price preview shows.
-- **The label at checkout is the tier's tag.** A tier has no other name yet.
+- **The label at checkout is the tier's name**, or its tag when it has none.
+  Shopify shows it in capitals.
 
 The Function is tested without Shopify: the fixtures in
 `extensions/wholesale-tier-discount/tests/fixtures/` are input and expected

@@ -958,3 +958,34 @@ CLAUDE.md rules out, and could be unreadable against its own text.
 The colour is not sent to the checkout Function: it only affects the admin.
 
 **Not yet seen:** the Select and the coloured badges inside the admin.
+
+## 6 Oct 2026 — a display name per tier
+
+Checkout showed `WHOLESALE-GOLD`, a raw customer tag. Each tier now has an
+optional `name`, such as "Wholesale Gold", set on the Settings page. Checkout,
+the Customers badge and filter, and the Price preview show the name. The tag
+is still the only thing that matches customers.
+
+`tier_settings.name` is nullable and was not backfilled: null means "show the
+tag", so existing tiers look as they did.
+
+The metafield's tiers gain a `name` key. Laravel always writes a string
+there, the tag when the tier has no name. The Function reads
+`tier.name ?? tier.tag`, so it also works with a metafield written before
+this change. That lets the two sides ship one at a time: the Function first,
+then Laravel, then a Save to rewrite the metafield.
+
+The name is shown to customers, so it is capped at 60 characters. Laravel's
+input clean-up trims it and turns an empty one into null.
+
+### Checkpoint
+
+- PHP suite: 36 passed. `TierDiscountConfigTest` now has a named tier and an
+  unnamed one.
+- Function: 13 fixtures passed against the built WebAssembly. Twelve carry
+  names; `gold-metafield-without-names.json` is the old shape and still
+  labels the line with the tag.
+- The migration ran on the dev database and the frontend builds.
+
+**Not yet seen:** the Name field inside the admin, and "WHOLESALE GOLD" at
+checkout. The Function has not been deployed with this change.

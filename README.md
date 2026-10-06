@@ -111,10 +111,10 @@ Laravel   saves tier_settings, then TierDiscountSync
   │         every time: writes all tiers to its metafield
   ▼
 Shopify   discount → metafield  $app:wholesale-tiers / function-configuration
-  ▼         {"tags": [...], "tiers": [{"tag", "type", "value"}]}
+  ▼         {"tags": [...], "tiers": [{"tag", "name", "type", "value"}]}
 Function  runs on every cart: which tier tags does this customer have?
   ▼         each line gets the tier that takes the most off
-Checkout  WHOLESALE-GOLD (-$145.99)
+Checkout  WHOLESALE GOLD (-$145.99)
 ```
 
 - **Saving is publishing.** Every add, save and delete on the Settings page
@@ -138,8 +138,9 @@ shops
   tier_discount_synced_at (nullable), timestamps
 
 tier_settings
-  id, shop_id (fk, cascade), tag, discount_type enum(percentage,fixed),
-  discount_value decimal(10,2), badge_tone (a Polaris Badge tone), timestamps
+  id, shop_id (fk, cascade), tag, name (nullable), discount_type
+  enum(percentage,fixed), discount_value decimal(10,2),
+  badge_tone (a Polaris Badge tone), timestamps
   unique(shop_id, tag)
 ```
 
