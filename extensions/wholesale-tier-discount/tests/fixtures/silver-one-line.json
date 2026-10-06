@@ -42,11 +42,13 @@
             "tiers": [
               {
                 "tag": "wholesale-gold",
+                "name": "Wholesale Gold",
                 "type": "percentage",
                 "value": "20.00"
               },
               {
                 "tag": "wholesale-silver",
+                "name": "Wholesale Silver",
                 "type": "percentage",
                 "value": "10.00"
               }
@@ -61,7 +63,7 @@
           "productDiscountsAdd": {
             "candidates": [
               {
-                "message": "wholesale-silver",
+                "message": "Wholesale Silver",
                 "targets": [
                   {
                     "cartLine": {

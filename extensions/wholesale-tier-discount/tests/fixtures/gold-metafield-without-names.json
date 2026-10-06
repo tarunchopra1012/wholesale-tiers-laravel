@@ -9,7 +9,7 @@
             "hasTags": [
               {
                 "tag": "wholesale-gold",
-                "hasTag": false
+                "hasTag": true
               },
               {
                 "tag": "wholesale-silver",
@@ -42,13 +42,11 @@
             "tiers": [
               {
                 "tag": "wholesale-gold",
-                "name": "Wholesale Gold",
                 "type": "percentage",
                 "value": "20.00"
               },
               {
                 "tag": "wholesale-silver",
-                "name": "Wholesale Silver",
                 "type": "percentage",
                 "value": "10.00"
               }
@@ -58,7 +56,30 @@
       }
     },
     "output": {
-      "operations": []
+      "operations": [
+        {
+          "productDiscountsAdd": {
+            "candidates": [
+              {
+                "message": "wholesale-gold",
+                "targets": [
+                  {
+                    "cartLine": {
+                      "id": "gid://shopify/CartLine/0"
+                    }
+                  }
+                ],
+                "value": {
+                  "percentage": {
+                    "value": "20.00"
+                  }
+                }
+              }
+            ],
+            "selectionStrategy": "ALL"
+          }
+        }
+      ]
     }
   }
 }

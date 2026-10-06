@@ -37,6 +37,7 @@
             "tiers": [
               {
                 "tag": "wholesale-five-off",
+                "name": "Five Off",
                 "type": "fixed",
                 "value": "5.00"
               }
@@ -51,7 +52,7 @@
           "productDiscountsAdd": {
             "candidates": [
               {
-                "message": "wholesale-five-off",
+                "message": "Five Off",
                 "targets": [
                   {
                     "cartLine": {

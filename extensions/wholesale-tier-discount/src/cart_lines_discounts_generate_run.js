@@ -6,7 +6,7 @@ import {
 /**
   * @typedef {import("../generated/api").CartInput} RunInput
   * @typedef {import("../generated/api").CartLinesDiscountsGenerateRunResult} CartLinesDiscountsGenerateRunResult
-  * @typedef {{tag: string, type: 'percentage' | 'fixed', value: string}} Tier
+  * @typedef {{tag: string, name?: string, type: 'percentage' | 'fixed', value: string}} Tier
   */
 
 /**
@@ -63,7 +63,8 @@ export function cartLinesDiscountsGenerateRun(input) {
       {
         productDiscountsAdd: {
           candidates: [...lineIdsByTier].map(([tier, lineIds]) => ({
-            message: tier.tag,
+            // A metafield written before tiers had names has no name.
+            message: tier.name ?? tier.tag,
             targets: lineIds.map((id) => ({cartLine: {id}})),
             value:
               tier.type === 'fixed'

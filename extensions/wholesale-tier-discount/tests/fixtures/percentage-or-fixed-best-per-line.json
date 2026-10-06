@@ -50,11 +50,13 @@
             "tiers": [
               {
                 "tag": "wholesale-silver",
+                "name": "Wholesale Silver",
                 "type": "percentage",
                 "value": "10.00"
               },
               {
                 "tag": "wholesale-five-off",
+                "name": "Five Off",
                 "type": "fixed",
                 "value": "5.00"
               }
@@ -69,7 +71,7 @@
           "productDiscountsAdd": {
             "candidates": [
               {
-                "message": "wholesale-silver",
+                "message": "Wholesale Silver",
                 "targets": [
                   {
                     "cartLine": {
@@ -84,7 +86,7 @@
                 }
               },
               {
-                "message": "wholesale-five-off",
+                "message": "Five Off",
                 "targets": [
                   {
                     "cartLine": {
