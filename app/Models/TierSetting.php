@@ -12,7 +12,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
-#[Fillable(['shop_id', 'tag', 'discount_type', 'discount_value', 'badge_tone'])]
+#[Fillable(['shop_id', 'tag', 'name', 'discount_type', 'discount_value', 'badge_tone'])]
 class TierSetting extends Model
 {
     /** @use HasFactory<TierSettingFactory> */
