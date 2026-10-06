@@ -17,15 +17,16 @@ final class TierDiscountConfigTest extends TestCase
     public function test_lists_each_tier_and_its_tag(): void
     {
         $config = (new TierDiscountConfig)->build([
-            $this->tier('wholesale-gold', DiscountType::Percentage, '20'),
+            $this->tier('wholesale-gold', DiscountType::Percentage, '20', 'Wholesale Gold'),
             $this->tier('wholesale-silver', DiscountType::Fixed, '5.5'),
         ]);
 
         $this->assertSame([
             'tags' => ['wholesale-gold', 'wholesale-silver'],
             'tiers' => [
-                ['tag' => 'wholesale-gold', 'type' => 'percentage', 'value' => '20.00'],
-                ['tag' => 'wholesale-silver', 'type' => 'fixed', 'value' => '5.50'],
+                ['tag' => 'wholesale-gold', 'name' => 'Wholesale Gold', 'type' => 'percentage', 'value' => '20.00'],
+                // No name of its own, so it goes out under its tag.
+                ['tag' => 'wholesale-silver', 'name' => 'wholesale-silver', 'type' => 'fixed', 'value' => '5.50'],
             ],
         ], $config);
     }
@@ -36,8 +37,8 @@ final class TierDiscountConfigTest extends TestCase
         $this->assertSame(['tags' => [], 'tiers' => []], (new TierDiscountConfig)->build([]));
     }
 
-    private function tier(string $tag, DiscountType $type, string $value): TierSetting
+    private function tier(string $tag, DiscountType $type, string $value, ?string $name = null): TierSetting
     {
-        return new TierSetting(['tag' => $tag, 'discount_type' => $type, 'discount_value' => $value]);
+        return new TierSetting(['tag' => $tag, 'name' => $name, 'discount_type' => $type, 'discount_value' => $value]);
     }
 }

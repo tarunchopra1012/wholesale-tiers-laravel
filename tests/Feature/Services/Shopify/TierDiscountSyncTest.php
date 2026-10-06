@@ -22,7 +22,7 @@ final class TierDiscountSyncTest extends TestCase
 
     private const DISCOUNT_ID = 'gid://shopify/DiscountAutomaticNode/1';
 
-    private const CONFIG = '{"tags":["wholesale-gold"],"tiers":[{"tag":"wholesale-gold","type":"percentage","value":"20.00"}]}';
+    private const CONFIG = '{"tags":["wholesale-gold"],"tiers":[{"tag":"wholesale-gold","name":"wholesale-gold","type":"percentage","value":"20.00"}]}';
 
     public function test_the_first_sync_creates_the_discount_with_the_tiers_on_it(): void
     {

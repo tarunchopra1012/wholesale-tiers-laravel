@@ -21,7 +21,7 @@ final readonly class TierDiscountConfig
      * the customer has.
      *
      * @param  iterable<TierSetting>  $tiers
-     * @return array{tags: list<string>, tiers: list<array{tag: string, type: string, value: string}>}
+     * @return array{tags: list<string>, tiers: list<array{tag: string, name: string, type: string, value: string}>}
      */
     public function build(iterable $tiers): array
     {
@@ -31,6 +31,9 @@ final readonly class TierDiscountConfig
             $config['tags'][] = $tier->tag;
             $config['tiers'][] = [
                 'tag' => $tier->tag,
+                // What checkout shows the customer. Always a string: a tier
+                // without a name goes out under its tag.
+                'name' => $tier->name ?? $tier->tag,
                 'type' => $tier->discount_type->value,
                 // The decimal:2 cast's string, e.g. "20.00": never a float.
                 'value' => (string) $tier->discount_value,
