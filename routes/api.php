@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Http\Controllers\Api\CheckoutStatusController;
 use App\Http\Controllers\Api\CustomerController;
 use App\Http\Controllers\Api\PreviewController;
 use App\Http\Controllers\Api\ProductController;
@@ -18,6 +19,8 @@ Route::get('/tiers', [TierSettingController::class, 'index']);
 Route::post('/tiers', [TierSettingController::class, 'store']);
 Route::put('/tiers', [TierSettingController::class, 'update']);
 Route::delete('/tiers/{id}', [TierSettingController::class, 'destroy'])->whereNumber('id');
+
+Route::get('/checkout-status', [CheckoutStatusController::class, 'show']);
 
 Route::get('/products', [ProductController::class, 'index']);
 
