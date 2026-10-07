@@ -16,7 +16,9 @@ prices charged at checkout.
 > customers, and price any product Shopify's own picker can find. Saved tiers
 > are also applied at checkout, by a Shopify Function that Laravel keeps
 > configured: on the development store a `wholesale-gold` customer paid 20%
-> less for a snowboard. The app has also
+> less for a snowboard. Each tier can carry a display name for checkout, the
+> Settings page reports whether the discount is live, and GitHub Actions runs
+> the tests on every pull request. The app has also
 > been deployed to AWS — ECS Fargate behind a load balancer and CloudFront,
 > with RDS MySQL — as a time-boxed demo, then deleted to avoid running costs;
 > see [Deployment on AWS](#deployment-on-aws). The roadmap below marks
@@ -521,6 +523,14 @@ Built:
   tiers from a discount metafield, tested with fixtures against the built
   WebAssembly; Laravel creates the discount and rewrites the metafield on
   every tier change
+- [x] A display name per tier — optional, shown at checkout, on the Customers
+  badge and in the Price preview; the tag still decides who gets the tier
+- [x] A badge colour per tier, chosen in Settings from Polaris's seven tones
+- [x] Checkout status on the Settings page — says whether the "Wholesale
+  tiers" discount is active, switched off, deleted or never set up, from
+  `GET /api/checkout-status`
+- [x] CI on GitHub Actions — the PHP suite and the Function's fixtures run on
+  every pull request and every push to `main`
 - [x] API docs — generated OpenAPI at `/docs/api` with Scramble, local only
 - [x] Production image — `.dockerignore`, a start-up entrypoint (cache,
   wait for the database, migrate), a `/up` health check that includes the
@@ -532,23 +542,55 @@ Built:
   re-run, a re-run redeploys without downtime, and teardown ends by checking
   nothing is left
 
-Not built yet:
+Not built yet. The first group is the next stage of work; each later group
+builds on the one before it.
 
-- [ ] A display name per tier, so checkout shows "Wholesale Gold" rather than
-  the raw tag
-- [ ] Infrastructure as code and a CI/CD pipeline for the AWS deployment
+Next — write to Shopify, and listen to it (needs the `write_customers` scope):
+
+- [ ] Change a customer's tier from the app, instead of tagging by hand in
+  the admin
+- [ ] An audit log of tier changes: who changed what, and whether it reached
+  checkout
+- [ ] Webhooks — `app/uninstalled` and the three compliance topics
+
+Later — scale, richer rules, and the storefront:
+
+- [ ] Assign a tier to many customers at once, in the background
+- [ ] Tier rules: a minimum order value and excluded collections
+- [ ] Show the wholesale price on the product page, which needs a theme app
+  extension
+
+Later still — AI features, and proof at scale:
+
+- [ ] AI tier suggestions, approved by the merchant
+- [ ] Set up tiers in plain English
+- [ ] An impact summary before saving
+- [ ] Ask questions about your wholesale customers
+- [ ] Run all of it against a store with 100,000 customers
+
+Known gaps in what is built:
+
+- [ ] The checkout status says "up to date" even after a save whose sync to
+  Shopify failed; fixing it needs a record of the failed sync
+- [ ] Two saves at the same moment on a shop with no discount yet could both
+  create one
+
+Deployment:
+
+- [ ] Infrastructure as code and a deploy pipeline for the AWS deployment
 - [ ] A custom domain with an ACM certificate on the load balancer
 
 ## Deliberately out of scope
 
-The exclusions are as considered as the build:
+The exclusions are as considered as the build. Two of them are postponed, not
+ruled out: they are on the roadmap above.
 
-| Excluded                                 | Why                                                                                                                       |
-| ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
-| Theme app extension                      | A display concern on the storefront, separate from the pricing engine                                                     |
-| Webhooks (`app/uninstalled`, `customers/update`) | Needed for production hygiene — orphaned records on uninstall — but adds infrastructure without changing what the app demonstrates |
-| Billing API, GDPR webhooks, multi-store  | These only matter for public App Store distribution                                                                       |
-| Broad test coverage                      | Tests cover only the places where a bug would be a security hole or a silent failure: the OAuth HMAC check, session-token verification, the middleware's shop resolution, token refresh, the throttle retry, `TierCalculator` — 0%, 100%, a fixed discount bigger than the price, and rounding at the half cent — and the checkout path: `TierDiscountConfig`, `TierDiscountSync` against faked Shopify answers, and the Function's fixtures. Controllers, views and the happy path through Shopify are checked by hand against a development store. |
+| Excluded | Why | Status |
+| --- | --- | --- |
+| Theme app extension | A display concern on the storefront, separate from the pricing engine | Postponed: needed to show the wholesale price on the product page |
+| Webhooks (`app/uninstalled`, the three compliance topics, `customers/update`) | Production hygiene — without `app/uninstalled`, a dead token stays in the database — but infrastructure that does not change what the app demonstrates | Postponed: `app/uninstalled` and the compliance topics are in the next stage. `customers/update` is not planned, because the app keeps no copy of customers to update |
+| Billing API, multi-store support | These only matter for public App Store distribution | Not planned |
+| Broad test coverage | Tests cover only the places where a bug would be a security hole or a silent failure: the OAuth HMAC check, session-token verification, the middleware's shop resolution, token refresh, the throttle retry, `TierCalculator` — 0%, 100%, a fixed discount bigger than the price, and rounding at the half cent — and the checkout path: `TierDiscountConfig`, `TierDiscountSync` against faked Shopify answers, and the Function's fixtures. Controllers, views and the happy path through Shopify are checked by hand against a development store. | Not planned. CI runs these tests on every pull request; it adds none |
 
 ## License
 
