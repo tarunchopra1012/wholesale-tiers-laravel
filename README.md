@@ -1,5 +1,7 @@
 # wholesale-tiers
 
+[![Tests](https://github.com/tarunchopra1012/wholesale-tiers-laravel/actions/workflows/tests.yml/badge.svg)](https://github.com/tarunchopra1012/wholesale-tiers-laravel/actions/workflows/tests.yml)
+
 An embedded Shopify admin app that lets a merchant assign wholesale discount
 tiers to customers by tag, preview the resulting prices, and have those
 prices charged at checkout.
@@ -289,6 +291,19 @@ Then, in the store:
 **Never run `shopify app dev` against this app.** It creates the dev preview
 described above, which overrides the released version for the store.
 
+### Tests on every pull request
+
+[.github/workflows/tests.yml](.github/workflows/tests.yml) runs two jobs on
+every pull request, and on every push to `main`:
+
+| Job                 | What it runs                                                        |
+| ------------------- | ------------------------------------------------------------------- |
+| `PHP suite`         | `php artisan test` on PHP 8.4, after building the frontend          |
+| `Function fixtures` | builds the Function with Shopify CLI, then `npx vitest run`         |
+
+Neither job needs a secret. The PHP suite uses in-memory SQLite and fakes
+Shopify's answers, and Shopify CLI builds a Function without logging in.
+
 ### Setup notes worth knowing
 
 A few things in this stack are easy to get wrong, and cost real time to
@@ -496,7 +511,7 @@ Built:
 - [x] `TierCalculator` — percentage or fixed discount in whole cents, exact
   decimal arithmetic, never below zero, rounded half-up; unit-tested
 - [x] `GET`, `POST`, `PUT` and `DELETE` on `/api/tiers`, plus
-  `GET /api/products` and `GET /api/preview`
+  `GET /api/products`, `GET /api/preview` and `GET /api/checkout-status`
 - [x] Settings page — a card per tier, percentage or fixed amount, all saved
   in one request, errors shown under the field; tiers can be added, renamed
   and deleted, with the delete confirmed first

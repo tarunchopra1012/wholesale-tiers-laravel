@@ -989,3 +989,70 @@ input clean-up trims it and turns an empty one into null.
 
 **Not yet seen:** the Name field inside the admin, and "WHOLESALE GOLD" at
 checkout. The Function has not been deployed with this change.
+
+## 7 Oct 2026 — checkout status on the Settings page
+
+On 5 Oct, "why is there no discount?" took an hour to answer. The Settings
+page now says what has become of the "Wholesale tiers" discount, above the
+tiers: active with the time of the last sync, switched off, deleted, or never
+set up.
+
+`GET /api/checkout-status` answers `{ state, synced_at }`, where `state` is
+`active`, `inactive`, `missing` or `never_synced`. It is its own endpoint, not
+part of `GET /api/tiers`, so the tiers still load when Shopify is slow or
+down. If the status can't be read, the page shows a warning in its place.
+
+The check is a `status()` method on `TierDiscountSync`, not a new service:
+that class already owns the discount, and CLAUDE.md limits tests to it.
+A shop with no saved discount ID is `never_synced` without asking Shopify.
+
+Shopify's `DiscountStatus` is `ACTIVE`, `EXPIRED` or `SCHEDULED`. Anything
+but `ACTIVE` is reported as `inactive`.
+
+The page asks again after every add, save and delete, since each one syncs.
+
+### Checkpoint
+
+- PHP suite: 40 passed, with four new `TierDiscountSync` cases, one per state.
+- The query's fields and the enum's values were checked against the store's
+  2026-07 schema by introspection. Run for real through
+  `ShopifyGraphQLClient`, the dev store's discount answered `ACTIVE`, and an
+  ID that doesn't exist answered a null node.
+
+**Not yet seen:** the card and the three banners inside the admin, and that
+deactivating the discount in the admin really reads as `EXPIRED`.
+
+**Known gap:** `active` says "Checkout is up to date" even after a save whose
+sync failed. The page shows the 502's message at that moment, but a reload
+loses it. Fixing it needs a record of the failed sync.
+
+## 7 Oct 2026 — tests on every pull request
+
+`.github/workflows/tests.yml` runs the PHP suite and the Function's fixtures
+on every pull request and every push to `main`. It adds no tests; it runs the
+ones there are.
+
+Two things the roadmap's sketch did not have:
+
+- **The PHP job builds the frontend first.** `ExampleTest` loads `/`, whose
+  view reads Vite's manifest, and `public/build` is not in git. Without the
+  build that test fails with "Vite manifest not found". Building also proves
+  the React code compiles.
+- **The Function job builds once before the tests.** The tests build the
+  Function themselves, inside a 45-second limit. On a fresh machine Shopify
+  CLI first downloads its build tools, so a separate build step keeps that
+  download out of the limit.
+
+Shopify CLI is installed as `@shopify/cli@4`, the major version used locally
+(4.8.5). No job needs a secret.
+
+### Checkpoint
+
+- Function job, replayed locally: a clean copy of the repository, an empty
+  home directory so no Shopify login could be found, `npm ci`,
+  `shopify app function build`, `npx vitest run`: 13 passed.
+- PHP job, replayed locally in a throwaway container from a clean copy:
+  failed on the missing manifest, then passed after `npm ci && npm run build`.
+
+**Not yet seen:** the workflow running on GitHub. The replay was on macOS and
+in the project's own PHP image, not on `ubuntu-latest`.
