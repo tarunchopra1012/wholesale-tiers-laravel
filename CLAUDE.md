@@ -66,15 +66,17 @@ Shopify Admin API
 ```
 app/
   Http/
-    Controllers/Api/     CustomerController, TierSettingController, PreviewController
+    Controllers/Api/     CustomerController, TierSettingController, PreviewController,
+                         CheckoutStatusController
     Middleware/          VerifyShopifySessionToken
-    Resources/           CustomerResource, TierSettingResource
+    Resources/           CustomerResource, TierSettingResource, CheckoutStatusResource
   Models/                Shop, TierSetting
   Services/Shopify/
     ShopifyGraphQLClient.php    thin HTTP wrapper, retries on 429
     CustomerQuery.php           query strings + response mapping
     ProductQuery.php
-    TierDiscountSync.php        creates the tier discount once, then writes its metafield
+    TierDiscountSync.php        creates the tier discount once, then writes its metafield;
+                                status() reports whether it is still active
   Support/
     TierCalculator.php          pure pricing logic, no I/O, unit-testable
     TierDiscountConfig.php      pure: a shop's tiers → the JSON the Function reads

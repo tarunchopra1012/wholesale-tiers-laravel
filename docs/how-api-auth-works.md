@@ -83,8 +83,8 @@ matters because the new screen usually fetches its data when it appears.
 | Customers screen appears             | `GET /api/tiers` and `GET /api/customers`                          | `/customers` yes, `/tiers` no   |
 | Change the tier filter, or Next page | `GET /api/customers?tier=…&after=…`                                | Yes                             |
 | Click "Tier settings"                | Nothing. React Router only                                         | —                               |
-| Settings screen appears              | `GET /api/tiers`                                                   | No. Tiers live in MySQL         |
-| Save, add or delete a tier           | `PUT`, `POST` or `DELETE` on `/api/tiers`                          | No                              |
+| Settings screen appears              | `GET /api/tiers` and `GET /api/checkout-status`                    | `/checkout-status` yes          |
+| Save, add or delete a tier           | `PUT`, `POST` or `DELETE` on `/api/tiers`, then `/checkout-status` | Yes, to update checkout         |
 | Preview screen appears               | `GET /api/products?limit=1`, then `GET /api/preview?product_id=…`  | Yes                             |
 | Click "Choose product"               | Nothing. The admin draws its own picker (`shopify.resourcePicker`) | —                               |
 
@@ -325,8 +325,9 @@ Two details in [lib/api.js](../resources/js/lib/api.js):
 The merchant may see the consent screen again. If so, they click Install,
 exactly like the first time.
 
-The Settings screen never shows the button. `/api/tiers` only reads MySQL, so
-it can't hit this error.
+On the Settings screen the button appears on the checkout status banner.
+`GET /api/tiers` only reads MySQL, so the tiers themselves still load; it is
+`GET /api/checkout-status` that asks Shopify and can hit this error.
 
 **Not covered yet.** When the middleware finds no row in `shops` (check 5), it
 still answers a bare 401, with no Reconnect button. Nothing in this app marks

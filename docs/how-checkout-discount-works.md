@@ -249,6 +249,11 @@ checkout is the price.
 | The Function throws                                                           | Shopify applies no discount for that run. Checkout still works                           |
 | Two saves at the same moment on a shop with no discount yet                   | Both could create a discount. Not guarded; a POC limit                                   |
 
+The first, third and fourth rows are visible to the merchant. The Settings
+page asks `GET /api/checkout-status` and says which of four states the
+discount is in: active, switched off, deleted, or never set up.
+`TierDiscountSync::status()` reads the discount's `status` from Shopify.
+
 ---
 
 ## 8. Why it is built this way
