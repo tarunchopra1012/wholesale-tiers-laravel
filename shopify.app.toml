@@ -2,7 +2,7 @@
 
 client_id = "61c0dd61069efbd97987f0dfdb4a972d"
 name = "wholesale-tiers"
-application_url = "https://last-tiffany-captain-composer.trycloudflare.com"
+application_url = "https://opposite-determining-aus-sponsored.trycloudflare.com"
 embedded = true
 
 [access_scopes]
@@ -13,7 +13,7 @@ use_legacy_install_flow = true
 
 [auth]
 redirect_urls = [
-  "https://last-tiffany-captain-composer.trycloudflare.com/auth/callback"
+  "https://opposite-determining-aus-sponsored.trycloudflare.com/auth/callback"
 ]
 
 [webhooks]
