@@ -1,0 +1,63 @@
+name: Tests
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  php:
+    name: PHP suite
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.4'
+          coverage: none
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: composer install --no-interaction --prefer-dist --no-progress
+
+      # The page at / reads Vite's manifest, and one test loads that page.
+      # public/build is not in git, so it is built here.
+      - run: npm ci
+      - run: npm run build
+
+      - run: cp .env.example .env
+      - run: php artisan key:generate
+
+      # In-memory SQLite, set in phpunit.xml: no database service needed.
+      - run: php artisan test
+
+  function:
+    name: Function fixtures
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: extensions/wholesale-tier-discount
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: extensions/wholesale-tier-discount/package-lock.json
+
+      - run: npm ci
+
+      # The fixtures run against the built WebAssembly, and Shopify CLI is
+      # what builds it. Building a Function needs no login.
+      - run: npm install --global @shopify/cli@4
+
+      # Built here first, so the downloads of Shopify's build tools don't
+      # count against the tests' own time limit.
+      - run: shopify app function build
+
+      - run: npx vitest run
