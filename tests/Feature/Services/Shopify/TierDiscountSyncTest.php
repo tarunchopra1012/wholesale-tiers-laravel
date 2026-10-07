@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Tests\Feature\Services\Shopify;
 
+use App\Enums\CheckoutState;
 use App\Models\Shop;
 use App\Models\TierSetting;
 use App\Services\Shopify\OAuthService;
@@ -107,6 +108,50 @@ final class TierDiscountSyncTest extends TestCase
         $this->assertNull($saved->tier_discount_synced_at);
     }
 
+    public function test_status_of_a_shop_that_never_synced_asks_shopify_nothing(): void
+    {
+        Http::fake();
+
+        $this->assertSame(CheckoutState::NeverSynced, $this->statusOf($this->shopWithGoldTier()));
+        Http::assertNothingSent();
+    }
+
+    public function test_status_is_active_while_shopify_applies_the_discount(): void
+    {
+        $this->fakeDiscountNode(['automaticDiscount' => ['status' => 'ACTIVE']]);
+
+        $this->assertSame(CheckoutState::Active, $this->statusOfSyncedShop());
+        Http::assertSent(fn (Request $request): bool => $this->variables($request) === ['id' => self::DISCOUNT_ID]);
+    }
+
+    public function test_status_is_inactive_when_the_discount_is_switched_off(): void
+    {
+        // Deactivating a discount in the admin ends it.
+        $this->fakeDiscountNode(['automaticDiscount' => ['status' => 'EXPIRED']]);
+
+        $this->assertSame(CheckoutState::Inactive, $this->statusOfSyncedShop());
+    }
+
+    public function test_status_is_missing_when_the_discount_was_deleted(): void
+    {
+        $this->fakeDiscountNode(null);
+
+        $this->assertSame(CheckoutState::Missing, $this->statusOfSyncedShop());
+    }
+
+    /**
+     * @param  array<string, mixed>|null  $node
+     */
+    private function fakeDiscountNode(?array $node): void
+    {
+        Http::fake(['*' => Http::response(['data' => ['automaticDiscountNode' => $node]])]);
+    }
+
+    private function statusOfSyncedShop(): CheckoutState
+    {
+        return $this->statusOf($this->shopWithGoldTier(['tier_discount_id' => self::DISCOUNT_ID]));
+    }
+
     /**
      * @param  array<string, mixed>  $attributes
      */
@@ -131,6 +176,16 @@ final class TierDiscountSyncTest extends TestCase
 
     private function sync(Shop $shop): void
     {
+        $this->tierDiscountSync($shop)->sync($shop);
+    }
+
+    private function statusOf(Shop $shop): CheckoutState
+    {
+        return $this->tierDiscountSync($shop)->status($shop);
+    }
+
+    private function tierDiscountSync(Shop $shop): TierDiscountSync
+    {
         $client = new ShopifyGraphQLClient($shop, new OAuthService(
             apiKey: 'test-client-id',
             apiSecret: 'test-secret-not-a-real-one-32-bytes-long',
@@ -138,6 +193,6 @@ final class TierDiscountSyncTest extends TestCase
             appUrl: 'https://app.example.test',
         ));
 
-        (new TierDiscountSync($client, new TierDiscountConfig))->sync($shop);
+        return new TierDiscountSync($client, new TierDiscountConfig);
     }
 }

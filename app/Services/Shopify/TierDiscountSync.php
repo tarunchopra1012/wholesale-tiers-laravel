@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services\Shopify;
 
+use App\Enums\CheckoutState;
 use App\Models\Shop;
 use App\Support\TierDiscountConfig;
 
@@ -12,6 +13,7 @@ use App\Support\TierDiscountConfig;
  *
  * The shop has one automatic discount that runs the Function. The first sync
  * creates it; every sync writes all of the shop's tiers to its metafield.
+ * status() reports whether that discount is still there and switched on.
  */
 final readonly class TierDiscountSync
 {
@@ -44,6 +46,19 @@ final readonly class TierDiscountSync
         query TierDiscount($id: ID!) {
           automaticDiscountNode(id: $id) {
             id
+          }
+        }
+        GRAPHQL;
+
+    /** Checked against the 2026-07 schema on 7 Oct 2026. */
+    private const STATUS = <<<'GRAPHQL'
+        query TierDiscountStatus($id: ID!) {
+          automaticDiscountNode(id: $id) {
+            automaticDiscount {
+              ... on DiscountAutomaticApp {
+                status
+              }
+            }
           }
         }
         GRAPHQL;
@@ -90,6 +105,33 @@ final readonly class TierDiscountSync
 
         $shop->tier_discount_synced_at = now();
         $shop->save();
+    }
+
+    /**
+     * What has become of the shop's discount in Shopify. Only reads: a
+     * deleted discount is reported here and created again by the next sync.
+     *
+     * @throws ShopifyApiException
+     * @throws ReauthorizationRequiredException
+     * @throws OAuthException
+     */
+    public function status(Shop $shop): CheckoutState
+    {
+        if ($shop->tier_discount_id === null) {
+            return CheckoutState::NeverSynced;
+        }
+
+        $data = $this->client->query(self::STATUS, ['id' => $shop->tier_discount_id]);
+
+        if ($data['automaticDiscountNode'] === null) {
+            return CheckoutState::Missing;
+        }
+
+        // Shopify's DiscountStatus is ACTIVE, EXPIRED or SCHEDULED. Switching
+        // a discount off in the admin ends it, which shows here as EXPIRED.
+        return ($data['automaticDiscountNode']['automaticDiscount']['status'] ?? null) === 'ACTIVE'
+            ? CheckoutState::Active
+            : CheckoutState::Inactive;
     }
 
     private function exists(string $discountId): bool
