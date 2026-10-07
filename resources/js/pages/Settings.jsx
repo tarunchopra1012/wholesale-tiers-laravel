@@ -17,7 +17,7 @@ import {
 } from '@shopify/polaris';
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { api } from '../lib/api.js';
+import { api, reconnectAction } from '../lib/api.js';
 
 const TYPE_OPTIONS = [
     { label: 'Percentage off', value: 'percentage' },
@@ -60,6 +60,13 @@ export default function Settings() {
     const [deleting, setDeleting] = useState(null);
     const [removing, setRemoving] = useState(false);
     const [deleteError, setDeleteError] = useState(null);
+    // { state, synced_at } from Shopify, or null until it answers.
+    const [checkout, setCheckout] = useState(null);
+    // The Error itself: it may carry the way to reconnect the store.
+    const [checkoutError, setCheckoutError] = useState(null);
+    // Counts the adds, saves and deletes. Each one syncs to Shopify, so the
+    // status is asked for again.
+    const [syncs, setSyncs] = useState(0);
 
     useEffect(() => {
         // Drops the answer if the page is left before it arrives.
@@ -81,6 +88,25 @@ export default function Settings() {
         };
     }, []);
 
+    useEffect(() => {
+        // Its own request, so the tiers still load when Shopify is slow.
+        let ignore = false;
+
+        api('/checkout-status')
+            .then((body) => {
+                if (ignore) return;
+                setCheckout(body.data);
+                setCheckoutError(null);
+            })
+            .catch((e) => {
+                if (!ignore) setCheckoutError(e);
+            });
+
+        return () => {
+            ignore = true;
+        };
+    }, [syncs]);
+
     function change(index, field, value) {
         setTiers((current) =>
             current.map((tier, i) => (i === index ? { ...tier, [field]: value } : tier)),
@@ -99,6 +125,7 @@ export default function Settings() {
             });
             // What the server stored, e.g. "25" comes back as "25.00".
             setTiers(body.data);
+            setSyncs((count) => count + 1);
             setToast('Tiers saved');
         } catch (e) {
             if (e.status !== 422) {
@@ -135,6 +162,7 @@ export default function Settings() {
             // Unsaved edits on the other cards are kept.
             setTiers((current) => [...current, body.data]);
             setDraft(null);
+            setSyncs((count) => count + 1);
             setToast('Tier added');
         } catch (e) {
             if (e.status === 422) {
@@ -162,6 +190,7 @@ export default function Settings() {
             // Field errors are keyed by position, which just shifted.
             setFieldErrors({});
             setDeleting(null);
+            setSyncs((count) => count + 1);
             setToast('Tier deleted');
         } catch (e) {
             setDeleteError(e.message);
@@ -195,6 +224,8 @@ export default function Settings() {
                         <p>{saveError}</p>
                     </Banner>
                 )}
+
+                <CheckoutStatus status={checkout} error={checkoutError} />
 
                 {loading && (
                     <Card>
@@ -301,6 +332,66 @@ export default function Settings() {
             {toast && <Toast content={toast} onDismiss={() => setToast(null)} />}
         </Page>
     );
+}
+
+// Whether the saved tiers are live at checkout. Nothing while Shopify hasn't
+// answered yet: an empty space is better than a guess.
+function CheckoutStatus({ status, error }) {
+    if (error) {
+        return (
+            <Banner
+                tone="warning"
+                title="Couldn't check the discount at checkout"
+                action={reconnectAction(error)}
+            >
+                <p>{error.message}</p>
+            </Banner>
+        );
+    }
+
+    switch (status?.state) {
+        case 'active':
+            return (
+                <Card>
+                    <InlineStack gap="200" blockAlign="center">
+                        <Badge tone="success">Active</Badge>
+                        <Text as="p">
+                            Checkout is up to date. Last updated {dateTime(status.synced_at)}.
+                        </Text>
+                    </InlineStack>
+                </Card>
+            );
+        case 'inactive':
+            return (
+                <Banner tone="warning" title="Wholesale customers are paying full price">
+                    <p>The “Wholesale tiers” discount is switched off in Discounts.</p>
+                </Banner>
+            );
+        case 'missing':
+            return (
+                <Banner tone="warning" title="Wholesale customers are paying full price">
+                    <p>The “Wholesale tiers” discount was deleted. Save to create it again.</p>
+                </Banner>
+            );
+        case 'never_synced':
+            return (
+                <Banner tone="info">
+                    <p>Checkout has not been set up yet. Save your tiers to switch it on.</p>
+                </Banner>
+            );
+        default:
+            return null;
+    }
+}
+
+// "5 Oct, 1:35 pm", in the merchant's own language and time zone.
+function dateTime(iso) {
+    return new Intl.DateTimeFormat(undefined, {
+        day: 'numeric',
+        month: 'short',
+        hour: 'numeric',
+        minute: '2-digit',
+    }).format(new Date(iso));
 }
 
 // One tier's fields, for a card on the page and for the Add tier dialog.
