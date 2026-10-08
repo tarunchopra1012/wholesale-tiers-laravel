@@ -115,12 +115,12 @@ every draw, but a request only goes out when one of two triggers fires.
   counter), runs the effect again. A redraw for any other reason returns the
   stored state and does nothing.
 - **"State updated first" differs by trigger.**
-  - _New path:_ `data` and `error` are cleared and `loading` becomes true. A
-    new path is a new question, so the old answer must not stay on screen.
-  - _`reload()`:_ only `loading` becomes true. The old answer and any old
-    error stay visible until the new answer arrives.
-  - The hook tells the two apart by remembering the last path it loaded in a
-    ref, `loadedPath`.
+    - _New path:_ `data` and `error` are cleared and `loading` becomes true. A
+      new path is a new question, so the old answer must not stay on screen.
+    - _`reload()`:_ only `loading` becomes true. The old answer and any old
+      error stay visible until the new answer arrives.
+    - The hook tells the two apart by remembering the last path it loaded in a
+      ref, `loadedPath`.
 - **"Is this run still the newest?" is the `ignore` flag.** Each run of the
   effect has its own `ignore` variable. When the effect runs again, React
   first calls the previous run's cleanup, which sets that run's `ignore` to
@@ -137,13 +137,13 @@ every draw, but a request only goes out when one of two triggers fires.
 
 How each caller uses it:
 
-| Caller                 | Path                             | What starts a new request                  |
-| ---------------------- | -------------------------------- | ------------------------------------------ |
-| Customers, tiers       | `/tiers`                         | First draw only                            |
-| Customers, list        | `/customers?tier=…&after=…`      | The filter or the page changes the path    |
-| Settings, status       | `/checkout-status`               | `reload()` after each successful write     |
-| Preview, first product | `/products?limit=1`              | First draw only                            |
-| Preview, prices        | `/preview?product_id=…` or null  | The product changes the path               |
+| Caller                 | Path                            | What starts a new request               |
+| ---------------------- | ------------------------------- | --------------------------------------- |
+| Customers, tiers       | `/tiers`                        | First draw only                         |
+| Customers, list        | `/customers?tier=…&after=…`     | The filter or the page changes the path |
+| Settings, status       | `/checkout-status`              | `reload()` after each successful write  |
+| Preview, first product | `/products?limit=1`             | First draw only                         |
+| Preview, prices        | `/preview?product_id=…` or null | The product changes the path            |
 
 ---
 
@@ -186,21 +186,21 @@ actions at the bottom change the state at the top.
 
 What "Page draws" shows:
 
-| Hook state           | Result                                                                               |
-| -------------------- | ------------------------------------------------------------------------------------ |
-| `loading`            | `CustomerList` shows a skeleton                                                      |
-| `error`              | A critical banner, with Reconnect when the error carries the URL; no table           |
-| `data` with no rows  | "No customers in this tier"                                                          |
-| `data` with rows     | The table; `TierBadges` gives each customer one badge per matching tier, or "Retail" |
+| Hook state          | Result                                                                               |
+| ------------------- | ------------------------------------------------------------------------------------ |
+| `loading`           | `CustomerList` shows a skeleton                                                      |
+| `error`             | A critical banner, with Reconnect when the error carries the URL; no table           |
+| `data` with no rows | "No customers in this tier"                                                          |
+| `data` with rows    | The table; `TierBadges` gives each customer one badge per matching tier, or "Retail" |
 
 The three actions, with an example:
 
-| Action                          | `cursors` before         | `cursors` after           | Path loaded                      |
-| ------------------------------- | ------------------------ | ------------------------- | -------------------------------- |
-| Next on page 1                  | `[null]`                 | `[null, "cur1"]`          | `/customers?after=cur1`          |
-| Next on page 2                  | `[null, "cur1"]`         | `[null, "cur1", "cur2"]`  | `/customers?after=cur2`          |
-| Previous on page 3              | `[null, "cur1", "cur2"]` | `[null, "cur1"]`          | `/customers?after=cur1`          |
-| `changeTier('wholesale-gold')`  | anything                 | `[null]`                  | `/customers?tier=wholesale-gold` |
+| Action                         | `cursors` before         | `cursors` after          | Path loaded                      |
+| ------------------------------ | ------------------------ | ------------------------ | -------------------------------- |
+| Next on page 1                 | `[null]`                 | `[null, "cur1"]`         | `/customers?after=cur1`          |
+| Next on page 2                 | `[null, "cur1"]`         | `[null, "cur1", "cur2"]` | `/customers?after=cur2`          |
+| Previous on page 3             | `[null, "cur1", "cur2"]` | `[null, "cur1"]`         | `/customers?after=cur1`          |
+| `changeTier('wholesale-gold')` | anything                 | `[null]`                 | `/customers?tier=wholesale-gold` |
 
 Previous works this way because Shopify only hands out a cursor for the next
 page, so the page steps back through cursors it has already seen. The page
@@ -249,12 +249,12 @@ When the page opens:
 
 The four actions:
 
-| Function    | Triggered by                                          | What it sends                                                                    |
-| ----------- | ----------------------------------------------------- | -------------------------------------------------------------------------------- |
-| `change()`  | Typing in any field of a card                         | Nothing. It replaces that one field in the `tiers` state and the card redraws.   |
-| `save()`    | The Save button                                       | `PUT /api/tiers` with every card                                                 |
-| `add()`     | "Add tier" in the dialog (opened by `openAdd()`)      | `POST /api/tiers` with the `draft`                                               |
-| `remove()`  | "Delete tier" in the dialog (opened by `askDelete()`) | `DELETE /api/tiers/{id}`                                                         |
+| Function   | Triggered by                                          | What it sends                                                                  |
+| ---------- | ----------------------------------------------------- | ------------------------------------------------------------------------------ |
+| `change()` | Typing in any field of a card                         | Nothing. It replaces that one field in the `tiers` state and the card redraws. |
+| `save()`   | The Save button                                       | `PUT /api/tiers` with every card                                               |
+| `add()`    | "Add tier" in the dialog (opened by `openAdd()`)      | `POST /api/tiers` with the `draft`                                             |
+| `remove()` | "Delete tier" in the dialog (opened by `askDelete()`) | `DELETE /api/tiers/{id}`                                                       |
 
 The three outcomes:
 
@@ -337,13 +337,91 @@ What "Page draws" shows:
 
 What `pickProduct()` can do:
 
-| Picker result                    | Effect                                                                          |
-| -------------------------------- | ------------------------------------------------------------------------------- |
-| A product is chosen              | `picked` is set to its `{ id, title }`; the path changes and the prices reload  |
-| The same product is chosen again | The path is unchanged, so nothing reloads                                       |
-| The merchant cancels             | The picker answers `undefined`; nothing changes                                 |
-| The picker throws                | A dismissible banner "Couldn't open the product picker"                         |
+| Picker result                    | Effect                                                                         |
+| -------------------------------- | ------------------------------------------------------------------------------ |
+| A product is chosen              | `picked` is set to its `{ id, title }`; the path changes and the prices reload |
+| The same product is chosen again | The path is unchanged, so nothing reloads                                      |
+| The merchant cancels             | The picker answers `undefined`; nothing changes                                |
+| The picker throws                | A dismissible banner "Couldn't open the product picker"                        |
 
 The picker is Shopify's own, opened through the `shopify` global that App
 Bridge provides. It makes no call to Laravel, and variants are hidden because
 the preview prices the first variant only.
+
+---
+
+## 7. How the types flow
+
+One type's journey from the server to the screen. Our frontend is everything
+from `lib/types.ts` down.
+
+```
+   Laravel API Resource                 ───▶   Runtime JSON:
+   toArray() defines the JSON                  never checked against T
+              │
+              │  copied by hand
+              ▼
+   lib/types.ts
+   one type per API Resource
+              │
+              ▼
+   useApi<T>() and api<T>()
+   the caller names the body as T
+              │
+              ▼
+   Page                                 ◀───   npm run typecheck:
+   data arrives typed as T, or null            fails on a wrong field
+              │
+              ▼
+   Component props
+   interface Props, the same types
+              │
+              ▼
+   Polaris components
+   their own prop types
+```
+
+Using `Tier` as the example:
+
+| Step | Where                                        | What it looks like                                                                      |
+| ---- | -------------------------------------------- | --------------------------------------------------------------------------------------- |
+| 1    | `TierSettingResource::toArray()`             | PHP returns `id`, `tag`, `name`, `discount_type`, `discount_value`, `badge_tone`        |
+| 2    | [lib/types.ts](../resources/js/lib/types.ts) | `interface Tier { id: number; tag: string; name: string \| null; … }`, written to match |
+| 3    | `useApi<Data<Tier[]>>('/tiers')`             | The page says "the body of this path is `{ data: Tier[] }`"                             |
+| 4    | `Customers.tsx`                              | `tiersLoad.data` is `Data<Tier[]> \| null`, so `tiers` is `Tier[]`                      |
+| 5    | `TierBadges`                                 | `interface Props { tags: string[]; tiers: Tier[] }`                                     |
+| 6    | Polaris `<Badge tone={tier.badge_tone}>`     | `BadgeTone` is a union of the seven tone strings Polaris accepts                        |
+
+**What the type checker guarantees.** From step 2 downwards, every use is
+checked. `npm run typecheck` fails if:
+
+- a page reads a field the type does not have, such as `customer.phone`;
+- a page uses `data` without handling null (the hook returns null until the
+  answer arrives);
+- a component is given the wrong props, or a required prop is left out;
+- a value Polaris does not accept is passed to it, such as a badge tone
+  outside the union.
+
+**What it does not guarantee.** There is one gap:
+
+- **Step 1 to step 2 is by hand.** If someone adds or renames a field in a
+  Resource and forgets `lib/types.ts`, nothing fails at build time.
+- **`T` is a claim, not a check.** `api<T>()` ends with `return body as T`.
+  If Laravel sends a different shape, TypeScript will not notice; the page
+  will misbehave at runtime instead.
+
+That is why `CLAUDE.md` says a Resource and its type change together.
+
+Three other places types enter:
+
+- **`ApiError`** in `lib/api.ts`. A `catch` gives `unknown` in strict mode,
+  and `e instanceof ApiError` is what lets a page read `status` and `errors`.
+- **The `shopify` global**, typed by the `@shopify/app-bridge-types` package,
+  so the picker's options and its answer are checked.
+- **Polaris's prop types.** `CustomerList` borrows
+  `IndexTableProps['pagination']` directly, so the pagination object must
+  match what Polaris expects.
+
+**Why Vite alone is not enough.** Vite strips the types without checking
+them, so a type error would still build. The separate `npm run typecheck`
+step, which CI also runs, is the only thing that enforces any of this.
