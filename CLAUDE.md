@@ -12,7 +12,7 @@ against them. This app closes that gap.
 | Layer             | Choice                                       | Version     |
 | ----------------- | -------------------------------------------- | ----------- |
 | Backend           | Laravel                                      | 13.x        |
-| Frontend          | React + Vite                                 | 18.x        |
+| Frontend          | React + TypeScript (strict) + Vite           | 18.x        |
 | UI                | Shopify Polaris                              | latest      |
 | Embedding         | App Bridge (CDN script)                      | latest      |
 | Database          | MySQL                                        | 8.0         |
@@ -84,10 +84,15 @@ extensions/
   wholesale-tier-discount/      the checkout Function; runs on Shopify, not here.
                                 Own package.json, built and uploaded by Shopify CLI
 resources/js/
-  main.jsx               entry; not app.jsx — macOS can't hold it beside App.jsx
-  App.jsx
-  pages/                 Customers.jsx, Settings.jsx, Preview.jsx
-  lib/api.js             fetch wrapper; App Bridge handles the auth header
+  main.tsx               entry; not app.tsx — macOS can't hold it beside App.tsx
+  App.tsx
+  pages/                 Customers.tsx, Settings.tsx, Preview.tsx
+  components/            what the pages draw: CustomerList, TierBadges, TierFields,
+                         CheckoutStatus, ProductHeader, PriceTable
+  hooks/useApi.ts        loads a path and keeps { data, error, loading, reload }
+  lib/api.ts             fetch wrapper; App Bridge handles the auth header
+  lib/types.ts           the API's shapes, one type per API Resource
+  lib/format.ts          tierLabel, money, dateTime
 routes/
   api.php                all /api/* routes, behind the session-token middleware
   web.php                OAuth install + callback, and the SPA catch-all
@@ -181,6 +186,9 @@ Use it as the shape reference for other queries.
   database, no HTTP. It is the one class worth unit-testing.
 - React: function components and hooks. Polaris components only — no custom CSS
   beyond layout. No Redux; `useState` and `useEffect` are enough for three pages.
+- TypeScript, strict. No `any`. An API Resource and its type in `lib/types.ts`
+  change together. `npm run typecheck` must pass: Vite builds without checking
+  types.
 
 ## Things NOT to build
 

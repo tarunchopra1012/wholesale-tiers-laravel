@@ -15,7 +15,7 @@ each one does.
 ## 1. How to read this
 
 - Part one (sections 2 to 11) follows each flow through the server.
-- Part two (sections 12 to 17) covers each frontend file from the inside.
+- Part two (sections 12 to 19) covers each frontend file from the inside.
 - In the call trees, indentation means "calls".
 - Two chains repeat inside almost every flow. They are written out once, as
   **A** (every `/api` request) and **B** (every call to Shopify), and
@@ -30,7 +30,7 @@ Where the files are:
 | Services    | [OAuthService.php](../app/Services/Shopify/OAuthService.php), [ShopifyGraphQLClient.php](../app/Services/Shopify/ShopifyGraphQLClient.php), [TierDiscountSync.php](../app/Services/Shopify/TierDiscountSync.php), [CustomerQuery.php](../app/Services/Shopify/CustomerQuery.php), [ProductQuery.php](../app/Services/Shopify/ProductQuery.php) |
 | Pure logic  | [TierCalculator.php](../app/Support/TierCalculator.php), [TierDiscountConfig.php](../app/Support/TierDiscountConfig.php)                                                                                                                                                                                                                       |
 | Function    | [cart_lines_discounts_generate_run.js](../extensions/wholesale-tier-discount/src/cart_lines_discounts_generate_run.js)                                                                                                                                                                                                                         |
-| Frontend    | [lib/api.js](../resources/js/lib/api.js), [Customers.jsx](../resources/js/pages/Customers.jsx), [Settings.jsx](../resources/js/pages/Settings.jsx), [Preview.jsx](../resources/js/pages/Preview.jsx)                                                                                                                                           |
+| Frontend    | [lib/api.ts](../resources/js/lib/api.ts), [lib/types.ts](../resources/js/lib/types.ts), [hooks/useApi.ts](../resources/js/hooks/useApi.ts), [pages/](../resources/js/pages), [components/](../resources/js/components) |
 
 ---
 
@@ -42,8 +42,8 @@ Purpose: prove which shop the browser request belongs to before any
 controller runs.
 
 ```
-Page component (Customers.jsx / Settings.jsx / Preview.jsx)
-└─ api(path, options)                              lib/api.js
+Page component (Customers.tsx / Settings.tsx / Preview.tsx), usually through useApi()
+└─ api(path, options)                              lib/api.ts
    └─ fetch('/api' + path)                         App Bridge adds Authorization: Bearer <ID token>
       └─ routes/api.php                            middleware attached to the group in bootstrap/app.php
          └─ VerifyShopifySessionToken::handle()
@@ -59,7 +59,7 @@ Page component (Customers.jsx / Settings.jsx / Preview.jsx)
 
 | #   | Function                               | What it does                                                                                                                                               |
 | --- | -------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 1   | `api()` in `lib/api.js`                | The one place the frontend calls `fetch`. Adds JSON headers, and turns a failed response into an `Error` carrying `status`, `errors` and `reauthorizeUrl`. |
+| 1   | `api()` in `lib/api.ts` | The one place the frontend calls `fetch`. Adds JSON headers, and throws an `ApiError` carrying `status`, `errors` and `reauthorizeUrl` when the response is a failure. |
 | 2   | App Bridge's wrapped `fetch`           | Shopify's script. Gets a fresh 60-second ID token from the admin and adds `Authorization: Bearer <token>`.                                                 |
 | 3   | `routes/api.php` + `bootstrap/app.php` | Matches the URL to a controller. The middleware is attached to the whole `api` group, so no route can skip it.                                             |
 | 4   | `VerifyShopifySessionToken::handle()`  | Reads the bearer token and coordinates the checks below.                                                                                                   |
@@ -126,16 +126,16 @@ GET /?embedded=1&shop=…&id_token=…
 └─ routes/web.php   Route::view('/{path?}', 'app')        no controller, no auth check
    └─ resources/views/app.blade.php
       ├─ <script src="…/app-bridge.js">                   wraps window.fetch
-      └─ @vite('resources/js/main.jsx')
-         └─ createRoot(...).render(<App />)               main.jsx
-            └─ App()                                      App.jsx   <Routes>: / , /settings , /preview
+      └─ @vite('resources/js/main.tsx')
+         └─ createRoot(...).render(<App />)               main.tsx
+            └─ App()                                      App.tsx   <Routes>: / , /settings , /preview
 ```
 
 | #   | Function                                             | What it does                                                                                                                        |
 | --- | ---------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
 | 1   | `Route::view('/{path?}', 'app')` in `routes/web.php` | Serves the same page for `/`, `/settings` and `/preview`, so a reload on any of them works. Excludes `/api`, `/docs`, `/telescope`. |
 | 2   | `app.blade.php`                                      | Outputs the API key in a meta tag, loads App Bridge first, then the Vite bundle.                                                    |
-| 3   | `main.jsx`                                           | Imports the Polaris CSS and mounts `<App />` into `<div id="root">`.                                                                |
+| 3   | `main.tsx`                                           | Imports the Polaris CSS and mounts `<App />` into `<div id="root">`.                                                                |
 | 4   | `App()`                                              | Shows a warning if not inside the admin; otherwise maps each path to its page component.                                            |
 
 Shopify adds `id_token`, `hmac`, `shop`, `host` and `timestamp` to this URL.
@@ -190,9 +190,10 @@ Purpose: show one page of the store's customers, live from Shopify, with tier
 badges.
 
 ```
-Customers()                                        Customers.jsx
-├─ useEffect [] → api('/tiers')                           → section 7, "Load"
-└─ useEffect [tier, after] → api('/customers?…')
+Customers()                                        pages/Customers.tsx
+├─ useApi('/tiers')                                       → section 7, "Load"
+└─ useApi('/customers?…')                                 runs again when tier or the cursor changes the path
+   └─ api(path)                                           hooks/useApi.ts
    └─ [A]
       └─ CustomerController::index()
          ├─ CustomerIndexRequest::rules()                 tier (TierRules::TAG_PATTERN), after
@@ -203,16 +204,16 @@ Customers()                                        Customers.jsx
             └─ CustomerResource::toArray()
 
 back in the browser:
-setCustomers / setHasNextPage / setEndCursor
-└─ CustomerList()
-   └─ TierBadges({tags, tiers})
+useApi() returns { data, error, loading } and the page redraws
+└─ CustomerList()                                        components/CustomerList.tsx
+   └─ TierBadges({tags, tiers})                           components/TierBadges.tsx
 changeTier()                                              resets the cursor list
 ```
 
 | #   | Function                        | What it does                                                                                                                                          |
 | --- | ------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 1   | `Customers()` first effect      | Loads the shop's tiers once, for the filter options and badge colours.                                                                                |
-| 2   | `Customers()` second effect     | Runs on load and whenever `tier` or the cursor changes. Builds the query string and calls `api('/customers…')`.                                       |
+| 1   | `useApi('/tiers')` in `Customers()` | Loads the shop's tiers once, for the filter options and badge colours. |
+| 2   | `useApi('/customers…')` in `Customers()` | The page builds the path from `tier` and the cursor; the hook loads it on first draw and again whenever the path changes. |
 | 3   | **A**                           | Verifies the token and resolves the shop.                                                                                                             |
 | 4   | `CustomerIndexRequest::rules()` | Allows only tag-safe characters in `tier`, because it goes into Shopify's search syntax.                                                              |
 | 5   | `CustomerController::index()`   | Wires the validated input to the query service and wraps the result in a Resource with `page_info`.                                                   |
@@ -232,12 +233,12 @@ to Shopify.
 
 ```
 Load
-Settings()                                         Settings.jsx
+Settings()                                         pages/Settings.tsx
 ├─ useEffect [] → api('/tiers')
 │  └─ [A] → TierSettingController::index()
 │           ├─ $shop->tierSettings()->orderBy('tag')->get()     database only
 │           └─ TierSettingResource::collection()
-└─ useEffect [syncs] → api('/checkout-status')            → section 8
+└─ useApi('/checkout-status')                             → section 8
 
 Add
 add()
@@ -277,14 +278,14 @@ syncCheckout()
    ├─ ShopifyApiException → TierDiscountSyncException     rendered as 502 in bootstrap/app.php
    └─ $shop->save()                                       tier_discount_id, tier_discount_synced_at
 
-after any success in the browser: setSyncs(count + 1) re-runs the checkout-status effect
+after any success in the browser: checkout.reload() asks for the checkout status again
 ```
 
 **Load**
 
 | #   | Function                         | What it does                                                                                                |
 | --- | -------------------------------- | ----------------------------------------------------------------------------------------------------------- |
-| 1   | `Settings()` first effect        | Calls `api('/tiers')`.                                                                                      |
+| 1   | The load effect in `Settings()` | Calls `api('/tiers')`. Written by hand, not with `useApi()`, because these tiers are then edited in place. |
 | 2   | `TierSettingController::index()` | Returns the shop's tiers ordered by tag. Reads only our database, so it works when Shopify is down.         |
 | 3   | `TierSettingResource::toArray()` | Sends `id`, `tag`, `name`, `discount_type`, `discount_value` (as a string like `"25.00"`) and `badge_tone`. |
 
@@ -292,7 +293,7 @@ after any success in the browser: setSyncs(count + 1) re-runs the checkout-statu
 
 | #   | Function                                                | What it does                                                                                                                                      |
 | --- | ------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 1   | `add()` / `save()` / `remove()` in `Settings.jsx`       | Send the POST, PUT or DELETE, then update the page's state from the answer. On a 422 they place each message under its field.                     |
+| 1   | `add()` / `save()` / `remove()` in `Settings.tsx`       | Send the POST, PUT or DELETE, then update the page's state from the answer. On a 422 they place each message under its field.                     |
 | 2   | `StoreTierSettingRequest` / `UpdateTierSettingsRequest` | Validate the input using the shared `TierRules`. The update request also checks each `id` belongs to this shop and that no two tiers share a tag. |
 | 3   | `TierRules::tag()`, `discountValue()` and the rest      | One set of rules for creating and editing: tag-safe and unique per shop, percentage 0 to 100, fixed above 0, two decimals at most.                |
 | 4   | `TierSettingController::store()`                        | Creates the tier. A unique-index violation from a race becomes a 422.                                                                             |
@@ -317,7 +318,7 @@ after any success in the browser: setSyncs(count + 1) re-runs the checkout-statu
 Purpose: tell the merchant whether the saved tiers are live at checkout.
 
 ```
-useEffect [syncs] → api('/checkout-status')        Settings.jsx
+useApi('/checkout-status')                         pages/Settings.tsx; reload() after each write
 └─ [A]
    └─ CheckoutStatusController::show()
       ├─ TierDiscountSync::status($shop)
@@ -325,15 +326,15 @@ useEffect [syncs] → api('/checkout-status')        Settings.jsx
       │  └─ [B] query(STATUS) → Missing / Active / Inactive
       └─ new CheckoutStatusResource({state, syncedAt})
 
-back in the browser: CheckoutStatus({status, error})
+back in the browser: CheckoutStatus({status, error})     components/CheckoutStatus.tsx
 ```
 
 | #   | Function                             | What it does                                                                                                                                                            |
 | --- | ------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 1   | `Settings()` second effect           | Calls `api('/checkout-status')` on load and after every add, save or delete (the `syncs` counter triggers it).                                                          |
+| 1   | `useApi('/checkout-status')` in `Settings()` | Loads the status when the page opens. `save()`, `add()` and `remove()` call its `reload()` after every successful write. |
 | 2   | `CheckoutStatusController::show()`   | Asks the sync service for the state and returns it with the last sync time.                                                                                             |
 | 3   | `TierDiscountSync::status()`         | No discount ID means "never synced", without calling Shopify. Otherwise asks Shopify (via **B**): gone is "missing", `ACTIVE` is "active", anything else is "inactive". |
-| 4   | `CheckoutStatus()` in `Settings.jsx` | Draws the green "Active" card or the matching warning banner.                                                                                                           |
+| 4   | `CheckoutStatus()` in `components/` | Draws the green "Active" card or the matching warning banner. |
 
 ## 9. Price preview
 
@@ -341,8 +342,8 @@ Purpose: show what each tier would pay for one product, calculated on the
 server.
 
 ```
-Preview()                                          Preview.jsx
-├─ useEffect [] → api('/products?limit=1')
+Preview()                                          pages/Preview.tsx
+├─ useApi('/products?limit=1')
 │  └─ [A] → ProductController::index()
 │           ├─ ProductIndexRequest::rules()
 │           ├─ ProductQuery::first($limit)
@@ -351,8 +352,8 @@ Preview()                                          Preview.jsx
 │           │  └─ product($node, $currency) → cents($price)
 │           └─ ProductResource::collection()
 ├─ pickProduct()
-│  └─ window.shopify.resourcePicker(...)                  Shopify's picker; no call to Laravel
-└─ useEffect [productId] → api('/preview?product_id=…')
+│  └─ shopify.resourcePicker(...)                         Shopify's picker; no call to Laravel
+└─ useApi('/preview?product_id=…')                        null, so nothing is loaded, until a product is known
    └─ [A] → PreviewController::show()
             ├─ PreviewRequest::rules()                    product_id must be a Product gid
             ├─ ProductQuery::find($id)                    [B] query(FIND_QUERY); null → 404
@@ -360,16 +361,16 @@ Preview()                                          Preview.jsx
             ├─ TierCalculator::calculate($priceCents, $tier)   once per tier
             └─ new PreviewResource({product, tiers})
 
-back in the browser: PriceTable() → money(), discount()
+back in the browser: PriceTable() → money(), discount()   components/PriceTable.tsx, lib/format.ts
 ```
 
 | #   | Function                                               | What it does                                                                                                                                 |
 | --- | ------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------- |
-| 1   | `Preview()` first effect                               | Calls `api('/products?limit=1')` so the page starts with a product.                                                                          |
+| 1   | `useApi('/products?limit=1')` in `Preview()` | Loads the store's first product, so the page starts with one. |
 | 2   | `ProductController::index()` → `ProductQuery::first()` | Fetches the first products by title with the shop's currency, via **B**.                                                                     |
 | 3   | `ProductQuery::product()` and `cents()`                | Take the first variant's price and convert it to whole cents with exact decimal maths. A price with a fraction of a cent is refused.         |
 | 4   | `pickProduct()`                                        | Opens Shopify's own product picker through App Bridge. Only the chosen product's ID and title are kept.                                      |
-| 5   | `Preview()` second effect                              | Calls `api('/preview?product_id=…')` whenever the product changes.                                                                           |
+| 5   | `useApi('/preview?product_id=…')` in `Preview()` | Loads the prices whenever the product, and so the path, changes. |
 | 6   | `PreviewRequest::rules()`                              | Accepts only an ID shaped like `gid://shopify/Product/123`.                                                                                  |
 | 7   | `PreviewController::show()` → `ProductQuery::find()`   | Reads the price from Shopify again (never from the browser). An unknown product is a 404.                                                    |
 | 8   | `TierCalculator::calculate()`                          | Pure function, called once per tier. Applies the percentage or fixed discount, rounds the final price half-up to the cent, never below zero. |
@@ -406,9 +407,9 @@ Purpose: recover when Shopify no longer accepts the shop's tokens.
 any [B] call
 └─ ReauthorizationRequiredException                thrown in refreshAccessToken() or query()
    └─ bootstrap/app.php  $exceptions->render(...)  403 {message, reauthorize_url}
-      └─ api()                                     error.reauthorizeUrl = body.reauthorize_url
-         └─ page sets its error state → <Banner action={reconnectAction(error)}>
-            └─ reconnectAction(error)              lib/api.js
+      └─ api()                                     throws ApiError with reauthorizeUrl = body.reauthorize_url
+         └─ useApi() keeps the error → <Banner action={reconnectAction(error)}>
+            └─ reconnectAction(error)              lib/api.ts
                └─ window.open(error.reauthorizeUrl, '_top')
                   └─ section 5 (OAuth install), which repairs the existing shops row
 ```
@@ -418,8 +419,8 @@ any [B] call
 | 1   | `ReauthorizationRequiredException`     | Thrown inside **B** when the refresh token is unusable or Shopify answers 401. Carries the URL from `reauthorizeUrl()`. |
 | 2   | `OAuthService::reauthorizeUrl()`       | Builds the absolute `/auth?shop=…` address from config.                                                                 |
 | 3   | Render callback in `bootstrap/app.php` | Answers 403 with a plain message and `reauthorize_url`.                                                                 |
-| 4   | `api()`                                | Copies `reauthorize_url` onto the thrown error.                                                                         |
-| 5   | `reconnectAction()` in `lib/api.js`    | Returns the banner's "Reconnect" button for an error that has the URL, and nothing for any other error.                 |
+| 4   | `api()` | Puts `reauthorize_url` on the `ApiError` it throws. |
+| 5   | `reconnectAction()` in `lib/api.ts` | Returns the banner's "Reconnect" button for an `ApiError` that has the URL, and nothing for any other error. |
 | 6   | `window.open(url, '_top')`             | Leaves the iframe and loads `/auth` in the whole tab, which runs section 5 and repairs the shop's row.                  |
 
 To see it on a dev store: blank both `access_token` and `refresh_token` in the
@@ -429,196 +430,240 @@ token is within a minute of expiring.
 
 ---
 
+
 # Part two: the frontend from the inside
 
-Each page section has three tables: the state it holds, the functions that
-change that state, and what it draws in each situation.
+The frontend is TypeScript. Each page section has three tables: the state it
+holds, the functions that change that state, and what it draws in each
+situation.
 
-## 12. Startup: `app.blade.php`, `main.jsx`, `App.jsx`
+```
+resources/js/
+  main.tsx, App.tsx      startup and routes
+  lib/api.ts             the one fetch wrapper, ApiError, reconnectAction()
+  lib/types.ts           the shapes the API answers with
+  lib/format.ts          tierLabel(), money(), dateTime()
+  hooks/useApi.ts        "load this path and keep the answer"
+  pages/                 Customers.tsx, Settings.tsx, Preview.tsx
+  components/            CustomerList, TierBadges, CheckoutStatus, TierFields,
+                         ProductHeader, PriceTable
+```
+
+## 12. Startup: `app.blade.php`, `main.tsx`, `App.tsx`
 
 Purpose: get React running inside the admin's iframe and pick the page for
 the current path.
 
-| #   | Code                                                       | What it does                                                                                                      |
-| --- | ---------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
-| 1   | `<meta name="shopify-api-key">` in `app.blade.php`         | Gives App Bridge our public client ID. Never the secret.                                                          |
-| 2   | `<script src="…/app-bridge.js">`                           | Loaded first and synchronously, so `fetch` is wrapped before our code runs. Also provides `window.shopify`.       |
-| 3   | `main.jsx`                                                 | Imports the Polaris stylesheet and renders `<App />` into `<div id="root">`, inside `StrictMode`.                 |
-| 4   | `const embedded = window.self !== window.top` in `App.jsx` | True when the page is inside a frame. Opened directly in a tab, it is false.                                      |
-| 5   | `App()` when not embedded                                  | Draws only a warning `Banner`: "Open this app from your Shopify admin". No API calls are made.                    |
-| 6   | `App()` when embedded                                      | Wraps everything in Polaris's `AppProvider` (translations) and `Frame` (needed for toasts), then `BrowserRouter`. |
-| 7   | `<Routes>`                                                 | `/` → `Customers`, `/settings` → `Settings`, `/preview` → `Preview`, anything else redirects to `/`.              |
+| #   | Code                                                        | What it does                                                                                                      |
+| --- | ----------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| 1   | `<meta name="shopify-api-key">` in `app.blade.php`          | Gives App Bridge our public client ID. Never the secret.                                                          |
+| 2   | `<script src="…/app-bridge.js">`                            | Loaded first and synchronously, so `fetch` is wrapped before our code runs. Also provides the `shopify` global.   |
+| 3   | `main.tsx`                                                  | Imports the Polaris stylesheet and renders `<App />` into `<div id="root">`, inside `StrictMode`.                 |
+| 4   | `const embedded = window.self !== window.top` in `App.tsx`  | True when the page is inside a frame. Opened directly in a tab, it is false.                                      |
+| 5   | `App()` when not embedded                                   | Draws only a warning `Banner`: "Open this app from your Shopify admin". No API calls are made.                    |
+| 6   | `App()` when embedded                                       | Wraps everything in Polaris's `AppProvider` (translations) and `Frame` (needed for toasts), then `BrowserRouter`. |
+| 7   | `<Routes>`                                                  | `/` → `Customers`, `/settings` → `Settings`, `/preview` → `Preview`, anything else redirects to `/`.              |
 
 Moving between pages is done with `useNavigate()` from page buttons, so it
 never reloads the iframe.
 
-## 13. The API wrapper: `lib/api.js`
+## 13. The API wrapper: `lib/api.ts`
 
-Purpose: one place for every request, and one consistent error shape for the
-pages.
+Purpose: one place for every request, and one error type for the pages.
 
-| #   | Code                                | What it does                                                                                                                                   |
-| --- | ----------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
-| 1   | `api(path, options)`                | Calls `fetch('/api' + path)` with JSON headers. The caller passes `method` and `body` for writes.                                              |
-| 2   | `response.json().catch(() => null)` | Tolerates responses with no JSON body, such as a 204 or an HTML error page from the tunnel.                                                    |
-| 3   | `if (!response.ok)`                 | Builds an `Error` whose message is Laravel's `message`, or the status code as a fallback.                                                      |
-| 4   | `error.status`                      | Lets a page tell a 422 from any other failure.                                                                                                 |
-| 5   | `error.errors`                      | Laravel's per-field messages on a 422, keyed by field path.                                                                                    |
-| 6   | `error.reauthorizeUrl`              | Set only on the 403 "reconnect" response.                                                                                                      |
-| 7   | `reconnectAction(error)`            | Returns a `{ content: 'Reconnect', onAction }` object for a Polaris `Banner` when the error has that URL; otherwise `undefined`, so no button. |
+| #   | Code                                  | What it does                                                                                                                                       |
+| --- | ------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | `api<T>(path, options)`               | Calls `fetch('/api' + path)` with JSON headers. The caller passes `method` and `body` for writes, and names the body it expects as `T`.            |
+| 2   | `response.json().catch(() => null)`   | Tolerates responses with no JSON body, such as a 204 or an HTML error page from the tunnel.                                                        |
+| 3   | `class ApiError extends Error`        | What `api()` throws on a failed response. Its message is Laravel's `message`, or the status code as a fallback.                                    |
+| 4   | `ApiError.status`                     | Lets a page tell a 422 from any other failure.                                                                                                     |
+| 5   | `ApiError.errors`                     | Laravel's per-field messages on a 422, keyed by field path.                                                                                        |
+| 6   | `ApiError.reauthorizeUrl`             | Set only on the 403 "reconnect" response.                                                                                                          |
+| 7   | `errorMessage(error)`                 | The text of whatever a `catch` block caught. A request that never got an answer throws fetch's own `TypeError`, not an `ApiError`.                 |
+| 8   | `reconnectAction(error)`              | Returns a `{ content: 'Reconnect', onAction }` object for a Polaris `Banner` when the error is an `ApiError` with that URL; otherwise `undefined`. |
 
-## 14. Customers page: `Customers.jsx`
+`T` is not checked against what the server really sent. The types are kept in
+step with the API Resources by hand.
+
+## 14. The API's shapes: `lib/types.ts`
+
+Purpose: one TypeScript type per Laravel API Resource, so a page that reads a
+field the API does not send fails the type check.
+
+| Type                       | Mirrors                                    | Used by                                         |
+| -------------------------- | ------------------------------------------ | ----------------------------------------------- |
+| `Tier`                     | `TierSettingResource`                      | All three pages                                 |
+| `TierValues`, `TierField`  | A tier without its `id`, and its field names | The Settings cards and the Add dialog         |
+| `DiscountType`, `BadgeTone` | `App\Enums\DiscountType`, `App\Enums\BadgeTone` | `Tier`                                    |
+| `Customer`                 | `CustomerResource`                         | Customers page                                  |
+| `CustomersPage`            | The `GET /api/customers` body, with `page_info` | Customers page                             |
+| `Product`                  | `ProductResource`                          | Price preview                                   |
+| `Preview`                  | `PreviewResource`                          | Price preview                                   |
+| `CheckoutStatus`           | `CheckoutStatusResource`                   | Settings page                                   |
+| `Data<T>`                  | Laravel's `{ data: … }` wrapper            | Every `api()` and `useApi()` call               |
+
+## 15. The loading hook: `hooks/useApi.ts`
+
+Purpose: the one pattern every read shared, written once. "Load this path,
+and give me the answer, the error, and whether it is still loading."
+
+| #   | Code                                    | What it does                                                                                                                                             |
+| --- | --------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | `useApi<T>(path)`                       | Returns `{ data, error, loading, reload }`. `data` is the response body, typed as `T`. `error` is the whole `Error`, so it can carry the reconnect URL. |
+| 2   | The effect, deps `[path, reloads]`      | Calls `api(path)` on first draw, when the path changes, and when `reload()` is called.                                                                   |
+| 3   | `let ignore` + the cleanup function     | When the effect runs again, the previous run's `ignore` becomes true, so a slow old answer cannot overwrite a newer one.                                 |
+| 4   | A changed path                          | Is a new question: `data` and `error` are cleared and `loading` is true, so old prices can never show under a new product's name.                        |
+| 5   | `reload()`                              | Asks the same question again. The old answer stays on screen until the new one arrives.                                                                  |
+| 6   | `path === null`                         | Means "nothing to load yet". The hook does nothing and `loading` is false.                                                                               |
+
+It is built only from `useState`, `useEffect` and `useRef`. The Settings
+page's tier list does not use it, because those tiers are edited in place and
+so are the page's own state.
+
+## 16. Customers page: `pages/Customers.tsx`
 
 Purpose: list customers with a tier filter, paging and badges. Read-only.
 
 **State**
 
-| Variable                   | Holds                                                          | Changed by                     |
-| -------------------------- | -------------------------------------------------------------- | ------------------------------ |
-| `tier`                     | The selected tier's tag; `''` means all customers              | `changeTier()`                 |
-| `cursors`                  | The cursor each visited page started after; starts as `[null]` | Next, Previous, `changeTier()` |
-| `customers`                | The rows of the current page                                   | The customers effect           |
-| `hasNextPage`, `endCursor` | Paging info from the last response                             | The customers effect           |
-| `loading`                  | True while a customers request is in flight                    | The customers effect           |
-| `error`                    | The whole `Error` object, so it can carry the reconnect URL    | The customers effect           |
-| `tiers`                    | The shop's tiers, for the filter and the badges                | The tiers effect               |
-| `tiersError`               | A message if the tiers failed to load                          | The tiers effect               |
+| Name         | Holds                                                           | Changed by                     |
+| ------------ | --------------------------------------------------------------- | ------------------------------ |
+| `tier`       | The selected tier's tag; `''` means all customers               | `changeTier()`                 |
+| `cursors`    | The cursor each visited page started after; starts as `[null]`  | Next, Previous, `changeTier()` |
+| `tiersLoad`  | `useApi('/tiers')`: the shop's tiers, for the filter and badges | The hook, once                 |
+| `page`       | `useApi('/customers…')`: the rows, `page_info`, error, loading  | The hook, on every path change |
 
-`after` is not state: it is derived on every render as the last item of
-`cursors`.
+Everything else is worked out on each draw: `after` (the last cursor), the
+query string, `tiers`, `customers` and `pageInfo`.
 
-**Effects and handlers**
+**Handlers**
 
-| #   | Function                               | What it does                                                                                                                                   |
-| --- | -------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
-| 1   | Tiers effect, deps `[]`                | Runs once. Calls `api('/tiers')` and stores the result.                                                                                        |
-| 2   | Customers effect, deps `[tier, after]` | Runs on load and whenever the filter or the page changes. Sets `loading`, clears `error`, builds the query string, calls `api('/customers…')`. |
-| 3   | `let ignore` + the cleanup function    | When the effect re-runs, the previous run's `ignore` becomes true, so a slow old answer cannot overwrite a newer one.                          |
-| 4   | `changeTier(value)`                    | Sets `tier` and resets `cursors` to `[null]`, which triggers the customers effect for page 1.                                                  |
-| 5   | `pagination.onNext`                    | Appends `endCursor` to `cursors`. `after` changes, so the effect fetches the next page.                                                        |
-| 6   | `pagination.onPrevious`                | Removes the last cursor. The effect refetches the earlier page using a cursor it already has.                                                  |
-| 7   | `fullName()`                           | Joins first and last name, or shows "No name".                                                                                                 |
+| #   | Function                 | What it does                                                                                              |
+| --- | ------------------------ | --------------------------------------------------------------------------------------------------------- |
+| 1   | `changeTier(value)`      | Sets `tier` and resets `cursors` to `[null]`. The path changes, so the hook loads page 1 of that tier.    |
+| 2   | `pagination.onNext`      | Appends `page_info.end_cursor` to `cursors`. The path changes, so the hook loads the next page.           |
+| 3   | `pagination.onPrevious`  | Removes the last cursor. The hook reloads the earlier page with a cursor the page already has.            |
 
 **What it draws**
 
-| Situation                | Result                                                                                                                              |
-| ------------------------ | ----------------------------------------------------------------------------------------------------------------------------------- |
-| Always                   | `Page` titled "Customers" with buttons to Tier settings and Price preview; a `Select` listing "All customers" plus each tier's name |
-| `error` set              | Critical `Banner` "Couldn't load customers", with Reconnect if available; the table area is empty                                   |
-| `tiersError` set         | Warning `Banner`; customers are still listed, without badges                                                                        |
-| `loading`                | `SkeletonBodyText` in place of the table                                                                                            |
-| No customers             | `EmptyState` "No customers in this tier"                                                                                            |
-| Otherwise                | `IndexTable` with Name, Email, Tier, Location and "Page N" pagination                                                               |
-| Tier cell (`TierBadges`) | One `Badge` per matching tier in its saved colour, or the text "Retail"                                                             |
+| Situation                              | Result                                                                                                                              |
+| -------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| Always                                 | `Page` titled "Customers" with buttons to Tier settings and Price preview; a `Select` listing "All customers" plus each tier's name |
+| `page.error` set                       | Critical `Banner` "Couldn't load customers", with Reconnect if available; the table area is empty                                   |
+| `tiersLoad.error` set                  | Warning `Banner`; customers are still listed, without badges                                                                        |
+| `page.loading`                         | `CustomerList` shows `SkeletonBodyText` in place of the table                                                                       |
+| No customers                           | `CustomerList` shows `EmptyState` "No customers in this tier"                                                                       |
+| Otherwise                              | `CustomerList` shows an `IndexTable` with Name, Email, Tier, Location and "Page N" pagination                                       |
+| Tier cell (`components/TierBadges.tsx`) | One `Badge` per matching tier in its saved colour, or the text "Retail"                                                            |
 
-## 15. Settings page: `Settings.jsx`
+## 17. Settings page: `pages/Settings.tsx`
 
 Purpose: edit tiers, and show whether they are live at checkout. The only
 page that writes.
 
 **State**
 
-| Variable                            | Holds                                                                  | Changed by                                             |
-| ----------------------------------- | ---------------------------------------------------------------------- | ------------------------------------------------------ |
-| `tiers`                             | The tier cards, including unsaved edits                                | Load effect, `change()`, `save()`, `add()`, `remove()` |
-| `loading`, `loadError`              | Status of the initial load                                             | Load effect                                            |
-| `saving`, `saveError`               | Status of Save; `saveError` is a message for the banner                | `save()`                                               |
-| `fieldErrors`                       | The 422 errors from Save, keyed like `tiers.0.tag`                     | `save()`, cleared by `remove()`                        |
-| `toast`                             | The toast's text, or null                                              | `save()`, `add()`, `remove()`                          |
-| `draft`                             | The Add dialog's form; null means the dialog is closed                 | `openAdd()`, typing, `add()`                           |
-| `adding`, `addError`, `draftErrors` | Status and errors of the Add dialog                                    | `add()`                                                |
-| `deleting`                          | The tier awaiting delete confirmation; null means the dialog is closed | `askDelete()`, `remove()`                              |
-| `removing`, `deleteError`           | Status of the delete                                                   | `remove()`                                             |
-| `checkout`, `checkoutError`         | `{ state, synced_at }` from Shopify, or the error                      | Checkout effect                                        |
-| `syncs`                             | A counter of successful writes                                         | `save()`, `add()`, `remove()`                          |
+| Variable                             | Holds                                                                  | Changed by                                              |
+| ------------------------------------ | ---------------------------------------------------------------------- | ------------------------------------------------------- |
+| `tiers`                              | The tier cards, including unsaved edits                                | Load effect, `change()`, `save()`, `add()`, `remove()`  |
+| `loading`, `loadError`               | Status of the initial load                                             | Load effect                                             |
+| `saving`, `saveError`                | Status of Save; `saveError` is a message for the banner                | `save()`                                                |
+| `fieldErrors`                        | The 422 errors from Save, keyed like `tiers.0.tag`                     | `save()`, cleared by `remove()`                         |
+| `toast`                              | The toast's text, or null                                              | `save()`, `add()`, `remove()`                           |
+| `draft`                              | The Add dialog's form; null means the dialog is closed                 | `openAdd()`, typing, `add()`                            |
+| `adding`, `addError`, `draftErrors`  | Status and errors of the Add dialog                                    | `add()`                                                 |
+| `deleting`                           | The tier awaiting delete confirmation; null means the dialog is closed | `askDelete()`, `remove()`                               |
+| `removing`, `deleteError`            | Status of the delete                                                   | `remove()`                                              |
+| `checkout`                           | `useApi('/checkout-status')`: `{ state, synced_at }`, or the error     | The hook; `checkout.reload()` after each write          |
 
 **Effects and handlers**
 
-| #   | Function                        | What it does                                                                                                                                                                   |
-| --- | ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| 1   | Load effect, deps `[]`          | Calls `api('/tiers')` once.                                                                                                                                                    |
-| 2   | Checkout effect, deps `[syncs]` | Calls `api('/checkout-status')` on load and again each time `syncs` increases.                                                                                                 |
-| 3   | `change(index, field, value)`   | Replaces one field of one card with a copy, leaving the others untouched. Nothing is sent yet.                                                                                 |
-| 4   | `save()`                        | Sends all cards with `PUT`. On success, replaces `tiers` with the server's version, bumps `syncs`, shows "Tiers saved".                                                        |
-| 5   | `save()` on a 422               | Stores `e.errors` in `fieldErrors`. Keys that match no visible field (tested with the `FIELD_ERROR` pattern) are joined into `saveError` for the banner.                       |
-| 6   | `save()` on any other error     | Puts the message in `saveError`. This includes the 502 "saved here, not at checkout".                                                                                          |
-| 7   | `openAdd()`                     | Sets `draft` to `NEW_TIER` (empty tag, percentage, blue), which opens the dialog.                                                                                              |
-| 8   | `add()`                         | Sends the draft with `POST`. On success, appends the new tier, closes the dialog, bumps `syncs`, shows "Tier added". A 422 goes to `draftErrors`, anything else to `addError`. |
-| 9   | `askDelete(tier)`               | Sets `deleting`, which opens the confirmation dialog.                                                                                                                          |
-| 10  | `remove()`                      | Sends `DELETE`. On success, filters the tier out, clears `fieldErrors` (their positions have shifted), closes the dialog, bumps `syncs`, shows "Tier deleted".                 |
-| 11  | `fieldError(key)`               | Returns the first message for a key such as `tiers.1.discount_value`.                                                                                                          |
-| 12  | `dateTime(iso)`                 | Formats the sync time in the merchant's own language and time zone.                                                                                                            |
+| #   | Function                       | What it does                                                                                                                                                                             |
+| --- | ------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | Load effect, deps `[]`         | Calls `api('/tiers')` once and puts the answer in `tiers`.                                                                                                                               |
+| 2   | `change(index, field, value)`  | Replaces one field of one card with a copy, leaving the others untouched. Nothing is sent yet.                                                                                           |
+| 3   | `save()`                       | Sends all cards with `PUT`. On success, replaces `tiers` with the server's version, calls `checkout.reload()`, shows "Tiers saved".                                                      |
+| 4   | `save()` on a 422              | Stores the `ApiError`'s `errors` in `fieldErrors`. Keys that match no visible field (tested with the `FIELD_ERROR` pattern) are joined into `saveError` for the banner.                  |
+| 5   | `save()` on any other error    | Puts the message in `saveError`. This includes the 502 "saved here, not at checkout".                                                                                                    |
+| 6   | `openAdd()`                    | Sets `draft` to `NEW_TIER` (empty tag, percentage, blue), which opens the dialog.                                                                                                        |
+| 7   | `add()`                        | Sends the draft with `POST`. On success, appends the new tier, closes the dialog, calls `checkout.reload()`, shows "Tier added". A 422 goes to `draftErrors`, anything else to `addError`. |
+| 8   | `askDelete(tier)`              | Sets `deleting`, which opens the confirmation dialog.                                                                                                                                    |
+| 9   | `remove()`                     | Sends `DELETE`. On success, filters the tier out, clears `fieldErrors` (their positions have shifted), closes the dialog, calls `checkout.reload()`, shows "Tier deleted".               |
+| 10  | `fieldError(key)`              | Returns the first message for a key such as `tiers.1.discount_value`.                                                                                                                    |
 
 **What it draws**
 
-| Situation                          | Result                                                                                                                                         |
-| ---------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
-| Always                             | `Page` titled "Settings" with a back button, "Add tier" as the primary action, and a link to Price preview                                     |
-| `loadError` / `saveError`          | Critical `Banner`; the save one can be dismissed                                                                                               |
-| Checkout status (`CheckoutStatus`) | "Active" card with the sync time, or a warning for `inactive` / `missing`, or an info banner for `never_synced`; nothing until Shopify answers |
-| `loading`                          | A `Card` with `SkeletonBodyText`                                                                                                               |
-| No tiers                           | A `Card` saying the store has no tiers yet                                                                                                     |
-| Each tier                          | A `Card` keyed by `tier.id`, with a live `Badge` preview, a Delete button, and `TierFields`                                                    |
-| At least one tier                  | A note about the "Wholesale tiers" discount and the primary Save `Button`                                                                      |
-| `draft !== null`                   | The "Add tier" `Modal`, containing the same `TierFields`                                                                                       |
-| `deleting !== null`                | The delete confirmation `Modal` with a destructive button                                                                                      |
-| `toast` set                        | A `Toast`                                                                                                                                      |
+| Situation                                        | Result                                                                                                                                          |
+| ------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| Always                                           | `Page` titled "Settings" with a back button, "Add tier" as the primary action, and a link to Price preview                                      |
+| `loadError` / `saveError`                        | Critical `Banner`; the save one can be dismissed                                                                                                |
+| Checkout status (`components/CheckoutStatus.tsx`) | "Active" card with the sync time, or a warning for `inactive` / `missing`, or an info banner for `never_synced`; nothing until Shopify answers |
+| `loading`                                        | A `Card` with `SkeletonBodyText`                                                                                                                |
+| No tiers                                         | A `Card` saying the store has no tiers yet                                                                                                      |
+| Each tier                                        | A `Card` keyed by `tier.id`, with a live `Badge` preview, a Delete button, and `TierFields`                                                     |
+| At least one tier                                | A note about the "Wholesale tiers" discount and the primary Save `Button`                                                                       |
+| `draft !== null`                                 | The "Add tier" `Modal`, containing the same `TierFields`                                                                                        |
+| `deleting !== null`                              | The delete confirmation `Modal` with a destructive button                                                                                       |
+| `toast` set                                      | A `Toast`                                                                                                                                       |
 
-`TierFields` is the form shared by the cards and the Add dialog. It receives
-`tier`, `onChange(field, value)` and `error(field)` as props, and draws Tag,
-Name, Discount type, Discount and Badge colour. Each input's `error` prop
-shows the server's message under it. The Discount field shows a `%` suffix for
-percentages and a currency hint for fixed amounts.
+`components/TierFields.tsx` is the form shared by the cards and the Add
+dialog. It receives `tier`, `onChange(field, value)` and `error(field)` as
+props, and draws Tag, Name, Discount type, Discount and Badge colour. Each
+input's `error` prop shows the server's message under it. The Discount field
+shows a `%` suffix for percentages and a currency hint for fixed amounts. The
+two option lists (`TYPE_OPTIONS`, `TONE_OPTIONS`) live in the same file.
 
-## 16. Price preview page: `Preview.jsx`
+## 18. Price preview page: `pages/Preview.tsx`
 
 Purpose: pick a product and show each tier's price for it. Read-only.
 
 **State**
 
-| Variable                         | Holds                                                | Changed by                    |
-| -------------------------------- | ---------------------------------------------------- | ----------------------------- |
-| `product`                        | `{ id, title }` of the product being priced, or null | Start effect, `pickProduct()` |
-| `starting`, `startError`         | Status of loading the first product                  | Start effect                  |
-| `pickerError`                    | A message if the picker failed to open               | `pickProduct()`               |
-| `preview`                        | `{ product, tiers }` from the server, or null        | Preview effect                |
-| `previewLoading`, `previewError` | Status of the price request                          | Preview effect                |
+| Name          | Holds                                                                   | Changed by                     |
+| ------------- | ----------------------------------------------------------------------- | ------------------------------ |
+| `picked`      | `{ id, title }` of the product chosen in the picker, or null            | `pickProduct()`                |
+| `pickerError` | A message if the picker failed to open                                  | `pickProduct()`                |
+| `start`       | `useApi('/products?limit=1')`: the store's first product                | The hook, once                 |
+| `prices`      | `useApi('/preview?product_id=…')`: `{ product, tiers }`, error, loading | The hook, when the product changes |
 
-`productId` is derived as `product?.id` on every render.
+`product` is worked out on each draw: the picked product, or else the first
+one from `start`.
 
-**Effects and handlers**
+**Handlers**
 
-| #   | Function                           | What it does                                                                                                                                                |
-| --- | ---------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 1   | Start effect, deps `[]`            | Calls `api('/products?limit=1')` and uses the first product, so a table appears straight away.                                                              |
-| 2   | Preview effect, deps `[productId]` | Does nothing without a product. Otherwise clears the old `preview` (so old prices cannot show under a new name), then calls `api('/preview?product_id=…')`. |
-| 3   | `pickProduct()`                    | Awaits `window.shopify.resourcePicker(...)`, Shopify's own picker with variants hidden. A selection sets `product`; cancelling changes nothing.             |
-| 4   | `money(amount, currency)`          | Formats a number as currency with `Intl.NumberFormat`. Display only.                                                                                        |
-| 5   | `discount(tier, currency)`         | Produces "25% off" or "$5.00 off".                                                                                                                          |
+| #   | Function         | What it does                                                                                                                            |
+| --- | ---------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | `pickProduct()`  | Awaits `shopify.resourcePicker(...)`, Shopify's own picker with variants hidden. A selection sets `picked`; cancelling changes nothing. |
 
 **What it draws**
 
-| Situation                      | Result                                                                                                       |
-| ------------------------------ | ------------------------------------------------------------------------------------------------------------ |
-| Always                         | `Page` titled "Price preview" with a back button and a link to Tier settings                                 |
-| `startError` / `previewError`  | Critical `Banner`, with Reconnect if available                                                               |
-| `pickerError`                  | Dismissible critical `Banner`                                                                                |
-| Store has no products          | `ProductHeader` shows "This store has no products yet."                                                      |
-| Otherwise                      | `ProductHeader` shows the product's title and a "Choose product" `Button`                                    |
-| `starting` or `previewLoading` | `PriceTable` shows `SkeletonBodyText`                                                                        |
-| `preview` loaded               | A `DataTable` with a "Retail" row at the base price, then one row per tier with its discount and final price |
+| Situation                              | Result                                                                                                       |
+| -------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| Always                                 | `Page` titled "Price preview" with a back button and a link to Tier settings                                 |
+| `start.error` / `prices.error`         | Critical `Banner`, with Reconnect if available                                                               |
+| `pickerError`                          | Dismissible critical `Banner`                                                                                |
+| Store has no products                  | `ProductHeader` shows "This store has no products yet."                                                      |
+| Otherwise                              | `ProductHeader` shows the product's title and a "Choose product" `Button`                                    |
+| `start.loading` or `prices.loading`    | `PriceTable` shows `SkeletonBodyText`                                                                        |
+| Prices loaded                          | A `DataTable` with a "Retail" row at the base price, then one row per tier with its discount and final price |
 
-## 17. Patterns that repeat on every page
+`money()` and `tierLabel()` come from `lib/format.ts`; `discount()`, which
+produces "25% off" or "$5.00 off", lives beside `PriceTable`.
 
-- **Fetch in an effect, guarded by `ignore`.** Every load uses the same
-  shape: set loading, call `api()`, store the result or the error, clear
-  loading.
-- **Errors that can reconnect are stored whole.** `error`, `startError`,
-  `previewError` and `checkoutError` keep the `Error` object so
-  `reconnectAction()` can read its URL. Errors that cannot (tiers, picker,
-  save) keep only the message.
+## 19. Patterns that repeat on every page
+
+- **Reads go through `useApi()`.** The page names a path and the body it
+  expects; the hook does the loading, the error handling and the guard
+  against out-of-order answers.
+- **Errors are kept whole where they can reconnect.** `useApi()` returns the
+  `Error` itself, and `reconnectAction()` reads the URL from it. Errors that
+  cannot reconnect (the Settings load, the picker, a save) keep only the
+  message.
 - **State is replaced, never edited in place.** `map`, `filter` and spread
   create new arrays and objects, which is what tells React to redraw.
+- **Values that can be worked out are not stored.** `after`, `tiers`,
+  `customers` and `product` are computed on each draw from the state and the
+  hook's answer.
 - **The server is the source of truth.** After a save, the page shows what
   Laravel returned, not what was typed, and all prices are calculated on the
   server.

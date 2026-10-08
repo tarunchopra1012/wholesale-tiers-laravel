@@ -56,11 +56,11 @@ with its own version**, and its version adds the ID token to every request to
 our own server. If our React code ran first, some of its requests could leave
 before the swap, with no token.
 
-That's why [lib/api.js](../resources/js/lib/api.js) sets no `Authorization`
+That's why [lib/api.ts](../resources/js/lib/api.ts) sets no `Authorization`
 header. It looks like a bug. It isn't: by the time `api()` calls `fetch`, it's
 App Bridge's `fetch`, and that adds the header.
 
-[App.jsx](../resources/js/App.jsx) adds one guard. Opened on its own, outside
+[App.tsx](../resources/js/App.tsx) adds one guard. Opened on its own, outside
 the admin, there's no admin to make ID tokens, so every `/api` call would fail.
 The app shows "Open this app from your Shopify admin" instead.
 
@@ -295,10 +295,10 @@ line.
 **On the React side:**
 
 ```
-  api.js          finds reauthorize_url in the 403 body, puts it on the Error
+  api.ts          finds reauthorize_url in the 403 body, puts it on the Error
                         │
-  Customers.jsx   the error banner shows the message, and
-  Preview.jsx     reconnectAction(error) adds a "Reconnect" button
+  Customers.tsx   the error banner shows the message, and
+  Preview.tsx     reconnectAction(error) adds a "Reconnect" button
                         │
   merchant clicks → window.open(reauthorize_url, '_top')
                         │
@@ -309,7 +309,7 @@ line.
                   → back into the admin, with the app loaded and working
 ```
 
-Two details in [lib/api.js](../resources/js/lib/api.js):
+Two details in [lib/api.ts](../resources/js/lib/api.ts):
 
 - **`'_top'`, because OAuth can't run inside the iframe.** Shopify's consent
   screen refuses to load in a frame. App Bridge's docs give
