@@ -5,37 +5,25 @@ import {
     Box,
     Button,
     Card,
-    FormLayout,
     InlineStack,
     Modal,
     Page,
-    Select,
     SkeletonBodyText,
     Text,
-    TextField,
     Toast,
 } from '@shopify/polaris';
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { api, reconnectAction } from '../lib/api.js';
+import CheckoutStatus from '../components/CheckoutStatus';
+import TierFields from '../components/TierFields';
+import { useApi } from '../hooks/useApi';
+import { api, ApiError, errorMessage } from '../lib/api';
+import type { CheckoutStatus as Status, Data, Tier, TierField, TierValues } from '../lib/types';
 
-const TYPE_OPTIONS = [
-    { label: 'Percentage off', value: 'percentage' },
-    { label: 'Fixed amount off', value: 'fixed' },
-];
+// Laravel's 422 body: each field's messages, keyed by the field's path.
+type FieldErrors = Record<string, string[]>;
 
-// The values are Polaris Badge tones, the same list as App\Enums\BadgeTone.
-const TONE_OPTIONS = [
-    { label: 'Blue', value: 'info' },
-    { label: 'Green', value: 'success' },
-    { label: 'Yellow', value: 'attention' },
-    { label: 'Orange', value: 'warning' },
-    { label: 'Red', value: 'critical' },
-    { label: 'Purple', value: 'magic' },
-    { label: 'Grey', value: 'new' },
-];
-
-const NEW_TIER = { tag: '', name: '', discount_type: 'percentage', discount_value: '', badge_tone: 'info' };
+const NEW_TIER: TierValues = { tag: '', name: '', discount_type: 'percentage', discount_value: '', badge_tone: 'info' };
 
 // The fields that show their own error. Any other 422 key — a tier that was
 // deleted in another window, say — has nowhere to show, so it goes in the
@@ -44,40 +32,39 @@ const FIELD_ERROR = /^tiers\.\d+\.(tag|name|discount_type|discount_value|badge_t
 
 export default function Settings() {
     const navigate = useNavigate();
-    const [tiers, setTiers] = useState([]);
+    const [tiers, setTiers] = useState<Tier[]>([]);
     const [loading, setLoading] = useState(true);
-    const [loadError, setLoadError] = useState(null);
+    const [loadError, setLoadError] = useState<string | null>(null);
     const [saving, setSaving] = useState(false);
-    const [saveError, setSaveError] = useState(null);
-    const [fieldErrors, setFieldErrors] = useState({});
-    const [toast, setToast] = useState(null);
+    const [saveError, setSaveError] = useState<string | null>(null);
+    const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
+    const [toast, setToast] = useState<string | null>(null);
     // The Add tier dialog: the form, or null while it's closed.
-    const [draft, setDraft] = useState(null);
+    const [draft, setDraft] = useState<TierValues | null>(null);
     const [adding, setAdding] = useState(false);
-    const [addError, setAddError] = useState(null);
-    const [draftErrors, setDraftErrors] = useState({});
+    const [addError, setAddError] = useState<string | null>(null);
+    const [draftErrors, setDraftErrors] = useState<FieldErrors>({});
     // The tier waiting for delete to be confirmed, or null.
-    const [deleting, setDeleting] = useState(null);
+    const [deleting, setDeleting] = useState<Tier | null>(null);
     const [removing, setRemoving] = useState(false);
-    const [deleteError, setDeleteError] = useState(null);
-    // { state, synced_at } from Shopify, or null until it answers.
-    const [checkout, setCheckout] = useState(null);
-    // The Error itself: it may carry the way to reconnect the store.
-    const [checkoutError, setCheckoutError] = useState(null);
-    // Counts the adds, saves and deletes. Each one syncs to Shopify, so the
-    // status is asked for again.
-    const [syncs, setSyncs] = useState(0);
+    const [deleteError, setDeleteError] = useState<string | null>(null);
+    // { state, synced_at } from Shopify. Its own request, so the tiers still
+    // load when Shopify is slow. Every add, save and delete syncs to
+    // Shopify, so each one asks for the status again.
+    const checkout = useApi<Data<Status>>('/checkout-status');
 
     useEffect(() => {
+        // Not useApi(): these tiers are then edited in place, so they are
+        // this page's own state rather than a copy of the last answer.
         // Drops the answer if the page is left before it arrives.
         let ignore = false;
 
-        api('/tiers')
+        api<Data<Tier[]>>('/tiers')
             .then((body) => {
                 if (!ignore) setTiers(body.data);
             })
-            .catch((e) => {
-                if (!ignore) setLoadError(e.message);
+            .catch((e: unknown) => {
+                if (!ignore) setLoadError(errorMessage(e));
             })
             .finally(() => {
                 if (!ignore) setLoading(false);
@@ -88,26 +75,7 @@ export default function Settings() {
         };
     }, []);
 
-    useEffect(() => {
-        // Its own request, so the tiers still load when Shopify is slow.
-        let ignore = false;
-
-        api('/checkout-status')
-            .then((body) => {
-                if (ignore) return;
-                setCheckout(body.data);
-                setCheckoutError(null);
-            })
-            .catch((e) => {
-                if (!ignore) setCheckoutError(e);
-            });
-
-        return () => {
-            ignore = true;
-        };
-    }, [syncs]);
-
-    function change(index, field, value) {
+    function change(index: number, field: TierField, value: string) {
         setTiers((current) =>
             current.map((tier, i) => (i === index ? { ...tier, [field]: value } : tier)),
         );
@@ -119,17 +87,17 @@ export default function Settings() {
         setFieldErrors({});
 
         try {
-            const body = await api('/tiers', {
+            const body = await api<Data<Tier[]>>('/tiers', {
                 method: 'PUT',
                 body: JSON.stringify({ tiers }),
             });
             // What the server stored, e.g. "25" comes back as "25.00".
             setTiers(body.data);
-            setSyncs((count) => count + 1);
+            checkout.reload();
             setToast('Tiers saved');
         } catch (e) {
-            if (e.status !== 422) {
-                setSaveError(e.message);
+            if (!(e instanceof ApiError) || e.status !== 422) {
+                setSaveError(errorMessage(e));
                 return;
             }
 
@@ -156,51 +124,56 @@ export default function Settings() {
         setDraftErrors({});
 
         try {
-            const body = await api('/tiers', { method: 'POST', body: JSON.stringify(draft) });
+            const body = await api<Data<Tier>>('/tiers', { method: 'POST', body: JSON.stringify(draft) });
             // Added at the end, not sorted in: sorting by tag would move
             // cards whose tag is being edited. A reload shows them by tag.
             // Unsaved edits on the other cards are kept.
             setTiers((current) => [...current, body.data]);
             setDraft(null);
-            setSyncs((count) => count + 1);
+            checkout.reload();
             setToast('Tier added');
         } catch (e) {
-            if (e.status === 422) {
+            if (e instanceof ApiError && e.status === 422) {
                 setDraftErrors(e.errors);
             } else {
-                setAddError(e.message);
+                setAddError(errorMessage(e));
             }
         } finally {
             setAdding(false);
         }
     }
 
-    function askDelete(tier) {
+    function askDelete(tier: Tier) {
         setDeleting(tier);
         setDeleteError(null);
     }
 
     async function remove() {
+        // Only the delete dialog calls this, and it is only open for a tier.
+        if (!deleting) {
+            return;
+        }
+
         setRemoving(true);
         setDeleteError(null);
 
         try {
-            await api(`/tiers/${deleting.id}`, { method: 'DELETE' });
+            await api<null>(`/tiers/${deleting.id}`, { method: 'DELETE' });
             setTiers((current) => current.filter((tier) => tier.id !== deleting.id));
             // Field errors are keyed by position, which just shifted.
             setFieldErrors({});
             setDeleting(null);
-            setSyncs((count) => count + 1);
+            checkout.reload();
             setToast('Tier deleted');
         } catch (e) {
-            setDeleteError(e.message);
+            setDeleteError(errorMessage(e));
         } finally {
             setRemoving(false);
         }
     }
 
     // Laravel sends a list per field; the first message is enough.
-    const fieldError = (key) => fieldErrors[key]?.[0];
+    const fieldError = (key: string): string | undefined => fieldErrors[key]?.[0];
 
     return (
         <Page
@@ -225,7 +198,7 @@ export default function Settings() {
                     </Banner>
                 )}
 
-                <CheckoutStatus status={checkout} error={checkoutError} />
+                <CheckoutStatus status={checkout.data?.data ?? null} error={checkout.error} />
 
                 {loading && (
                     <Card>
@@ -293,7 +266,7 @@ export default function Settings() {
                         {draft && (
                             <TierFields
                                 tier={draft}
-                                onChange={(field, value) => setDraft((current) => ({ ...current, [field]: value }))}
+                                onChange={(field, value) => setDraft((current) => current && { ...current, [field]: value })}
                                 error={(field) => draftErrors[field]?.[0]}
                                 tagHelp="The customer tag in Shopify, such as wholesale-bronze. Letters, numbers, hyphens and underscores only."
                             />
@@ -331,125 +304,5 @@ export default function Settings() {
 
             {toast && <Toast content={toast} onDismiss={() => setToast(null)} />}
         </Page>
-    );
-}
-
-// Whether the saved tiers are live at checkout. Nothing while Shopify hasn't
-// answered yet: an empty space is better than a guess.
-function CheckoutStatus({ status, error }) {
-    if (error) {
-        return (
-            <Banner
-                tone="warning"
-                title="Couldn't check the discount at checkout"
-                action={reconnectAction(error)}
-            >
-                <p>{error.message}</p>
-            </Banner>
-        );
-    }
-
-    switch (status?.state) {
-        case 'active':
-            return (
-                <Card>
-                    <InlineStack gap="200" blockAlign="center">
-                        <Badge tone="success">Active</Badge>
-                        <Text as="p">
-                            Checkout is up to date. Last updated {dateTime(status.synced_at)}.
-                        </Text>
-                    </InlineStack>
-                </Card>
-            );
-        case 'inactive':
-            return (
-                <Banner tone="warning" title="Wholesale customers are paying full price">
-                    <p>The “Wholesale tiers” discount is switched off in Discounts.</p>
-                </Banner>
-            );
-        case 'missing':
-            return (
-                <Banner tone="warning" title="Wholesale customers are paying full price">
-                    <p>The “Wholesale tiers” discount was deleted. Save to create it again.</p>
-                </Banner>
-            );
-        case 'never_synced':
-            return (
-                <Banner tone="info">
-                    <p>Checkout has not been set up yet. Save your tiers to switch it on.</p>
-                </Banner>
-            );
-        default:
-            return null;
-    }
-}
-
-// "5 Oct, 1:35 pm", in the merchant's own language and time zone.
-function dateTime(iso) {
-    return new Intl.DateTimeFormat(undefined, {
-        day: 'numeric',
-        month: 'short',
-        hour: 'numeric',
-        minute: '2-digit',
-    }).format(new Date(iso));
-}
-
-// One tier's fields, for a card on the page and for the Add tier dialog.
-// `error(field)` gives that field's message, if any.
-function TierFields({ tier, onChange, error, tagHelp }) {
-    return (
-        <FormLayout>
-            {/* `error` renders Polaris's InlineError under the field and
-                marks the input invalid for screen readers. */}
-            <TextField
-                label="Tag"
-                value={tier.tag}
-                onChange={(value) => onChange('tag', value)}
-                helpText={tagHelp}
-                autoComplete="off"
-                error={error('tag')}
-            />
-            <TextField
-                label="Name"
-                // Null from the server when the tier has no name.
-                value={tier.name ?? ''}
-                onChange={(value) => onChange('name', value)}
-                helpText="Shown to customers at checkout, and here in the app. Leave it empty to show the tag."
-                maxLength={60}
-                autoComplete="off"
-                error={error('name')}
-            />
-            <FormLayout.Group>
-                <Select
-                    label="Discount type"
-                    options={TYPE_OPTIONS}
-                    value={tier.discount_type}
-                    onChange={(value) => onChange('discount_type', value)}
-                    error={error('discount_type')}
-                />
-                <TextField
-                    label="Discount"
-                    type="number"
-                    value={tier.discount_value}
-                    onChange={(value) => onChange('discount_value', value)}
-                    suffix={tier.discount_type === 'percentage' ? '%' : undefined}
-                    helpText={
-                        tier.discount_type === 'fixed'
-                            ? "Taken off each product's price, in your store's currency."
-                            : undefined
-                    }
-                    autoComplete="off"
-                    error={error('discount_value')}
-                />
-            </FormLayout.Group>
-            <Select
-                label="Badge colour"
-                options={TONE_OPTIONS}
-                value={tier.badge_tone}
-                onChange={(value) => onChange('badge_tone', value)}
-                helpText="The colour of this tier's badge on the Customers page."
-                error={error('badge_tone')}
-            />
-        </FormLayout>
     );
 }
