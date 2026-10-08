@@ -14,9 +14,9 @@
          place before any of our code runs. --}}
     <script src="https://cdn.shopify.com/shopifycloud/app-bridge.js"></script>
 
-    {{-- Polaris CSS arrives through main.jsx's import, not a <link> here. --}}
+    {{-- Polaris CSS arrives through main.tsx's import, not a <link> here. --}}
     @viteReactRefresh
-    @vite('resources/js/main.jsx')
+    @vite('resources/js/main.tsx')
 </head>
 <body>
     <div id="root"></div>
