@@ -27,6 +27,9 @@ jobs:
       # The page at / reads Vite's manifest, and one test loads that page.
       # public/build is not in git, so it is built here.
       - run: npm ci
+      # Vite strips the types without checking them, so a type error would
+      # still build. This is the step that fails on one.
+      - run: npm run typecheck
       - run: npm run build
 
       - run: cp .env.example .env
