@@ -6,6 +6,7 @@ namespace App\Services\Shopify;
 
 use App\Models\Shop;
 use App\Support\ShopDomain;
+use Illuminate\Contracts\Encryption\DecryptException;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\Response;
 use Illuminate\Support\Facades\Cache;
@@ -116,21 +117,29 @@ final readonly class OAuthService
             throw new OAuthException("{$shop} did not grant: ".implode(', ', $missing).'.');
         }
 
-        return Shop::updateOrCreate(
-            ['shop_domain' => $shop->value],
-            [
-                ...$tokens,
-                'scopes' => $grantedScopes,
-                'installed_at' => now(),
-                // A reinstall revives the existing row and its tiers.
-                'uninstalled_at' => null,
-            ],
-        );
+        // Not updateOrCreate(): the row found may hold tokens that can't be
+        // read, which is exactly why the merchant is here again.
+        $row = Shop::firstOrNew(['shop_domain' => $shop->value]);
+
+        if ($row->exists) {
+            $this->forgetUnreadableTokens($row);
+        }
+
+        $row->fill([
+            ...$tokens,
+            'scopes' => $grantedScopes,
+            'installed_at' => now(),
+            // A reinstall revives the existing row and its tiers.
+            'uninstalled_at' => null,
+        ])->save();
+
+        return $row;
     }
 
     /**
      * The shop's access token, refreshed first if it expires within a
-     * minute.
+     * minute — or if the stored one can't be read at all, which the refresh
+     * token can repair without troubling the merchant.
      *
      * @throws ReauthorizationRequiredException when Shopify refuses the
      *                                          refresh token. Only the
@@ -140,8 +149,10 @@ final readonly class OAuthService
      */
     public function freshAccessToken(Shop $shop): string
     {
-        if (! $this->expiresSoon($shop)) {
-            return $shop->access_token;
+        $token = $this->storedToken($shop, 'access_token');
+
+        if ($token !== null && ! $this->expiresSoon($shop)) {
+            return $token;
         }
 
         // Shopify's docs: refresh one store at a time. Two requests
@@ -156,12 +167,30 @@ final readonly class OAuthService
             // turns — both would still happen.
             $shop->refresh();
 
-            if ($this->expiresSoon($shop)) {
+            if ($this->storedToken($shop, 'access_token') === null || $this->expiresSoon($shop)) {
                 $this->refreshAccessToken($shop);
             }
 
             return $shop->access_token;
         });
+    }
+
+    /**
+     * A token column's value, or null when there is nothing usable in it:
+     * empty, or not something this APP_KEY can decrypt — a row edited by
+     * hand, or a key rotated since the token was saved. Reading the
+     * attribute directly would throw "The payload is invalid." and answer
+     * the merchant with a 500 for what is really a dead token.
+     */
+    private function storedToken(Shop $shop, string $column): ?string
+    {
+        try {
+            $token = $shop->getAttribute($column);
+        } catch (DecryptException) {
+            return null;
+        }
+
+        return is_string($token) && $token !== '' ? $token : null;
     }
 
     /**
@@ -195,10 +224,12 @@ final readonly class OAuthService
         $domain = ShopDomain::tryFrom($shop->shop_domain)
             ?? throw new OAuthException("Stored shop domain {$shop->shop_domain} is not valid.");
 
-        if ($shop->refresh_token === null) {
+        $refreshToken = $this->storedToken($shop, 'refresh_token');
+
+        if ($refreshToken === null) {
             throw new ReauthorizationRequiredException(
                 $this->reauthorizeUrl($shop),
-                "{$domain} has an expiring token but no refresh token.",
+                "{$domain} needs a new access token but has no readable refresh token.",
             );
         }
 
@@ -210,7 +241,7 @@ final readonly class OAuthService
                     'client_id' => $this->apiKey,
                     'client_secret' => $this->apiSecret,
                     'grant_type' => 'refresh_token',
-                    'refresh_token' => $shop->refresh_token,
+                    'refresh_token' => $refreshToken,
                 ]);
         } catch (ConnectionException $e) {
             throw new OAuthException("Could not reach {$domain} to refresh its token.", previous: $e);
@@ -240,7 +271,27 @@ final readonly class OAuthService
         // Every refresh also issues a new refresh token, and the old one stops
         // working once the new one is used. Both have to be saved, or the
         // next refresh fails.
-        $shop->update($this->tokenColumns($response, $domain));
+        $columns = $this->tokenColumns($response, $domain);
+
+        $this->forgetUnreadableTokens($shop);
+        $shop->update($columns);
+    }
+
+    /**
+     * Call before saving new tokens over old ones. To decide what to write,
+     * Eloquent decrypts each old value and compares it with the new one, so
+     * an unreadable old token would throw mid-save — after Shopify has
+     * already spent the code or refresh token that bought the new ones.
+     * This blanks such values in memory only; the save that follows
+     * overwrites them in the row.
+     */
+    private function forgetUnreadableTokens(Shop $shop): void
+    {
+        foreach (['access_token', 'refresh_token'] as $column) {
+            if ($this->storedToken($shop, $column) === null) {
+                $shop->setRawAttributes([...$shop->getAttributes(), $column => null], sync: true);
+            }
+        }
     }
 
     /**
