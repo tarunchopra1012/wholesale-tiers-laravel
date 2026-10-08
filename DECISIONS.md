@@ -1056,3 +1056,65 @@ Shopify CLI is installed as `@shopify/cli@4`, the major version used locally
 
 **Not yet seen:** the workflow running on GitHub. The replay was on macOS and
 in the project's own PHP image, not on `ubuntu-latest`.
+
+---
+
+## 8 Oct 2026 — frontend split into components, then moved to TypeScript
+
+Two steps, in that order, with no change to what the pages do.
+
+### One hook for every read: `useApi(path)`
+
+Five loads had the same shape: set loading, call `api()`, keep the answer or
+the error, and drop an answer that a newer request has overtaken. That is now
+[hooks/useApi.ts](resources/js/hooks/useApi.ts), built from `useState`,
+`useEffect` and `useRef` only.
+
+- **A changed path clears the old answer; `reload()` keeps it.** A new
+  product is a new question, and its failure must not leave the old product's
+  prices on screen. The checkout status after a save is the same question
+  again, and the old status should stay until the new one arrives. These were
+  the two behaviours the pages already had, so the hook has both.
+- **The Settings tier list does not use it.** Those tiers are edited in
+  place. Copying a hook's answer into state would draw the "no tiers yet"
+  card for one frame before the tiers arrive.
+- **`syncs` is gone.** The counter only existed to re-run the status effect;
+  `checkout.reload()` says what it does.
+
+### Sub-components moved to `components/`, helpers to `lib/format.ts`
+
+Moved as they were. `tierLabel()` replaces three copies of
+`tier.name ?? tier.tag`. The Settings card keeps its own
+`tier.name || tier.tag || 'Untitled tier'`: while a merchant is typing, an
+empty name is `''`, not null.
+
+### TypeScript, strict, checked in CI
+
+- **Types for the API are written by hand** in
+  [lib/types.ts](resources/js/lib/types.ts), one per API Resource. Nothing
+  checks them against the server. Generating them from the Scramble OpenAPI
+  spec was the alternative; for eight endpoints it is more machinery than the
+  types themselves.
+- **`api()` throws an `ApiError` class** where it used to attach fields to a
+  plain `Error`. A `catch` gives `unknown` in strict mode, and
+  `instanceof ApiError` is how the pages get from that to `status` and
+  `errors`.
+- **`@types/react` is pinned to 18.** Polaris asks for any version, and npm
+  had been resolving that to 19 while React itself is 18.
+- **`@shopify/app-bridge-types` types the `shopify` global**, so the product
+  picker's arguments and answer are checked too.
+- **`npm run typecheck` is its own CI step.** Vite strips types without
+  checking them, so the build alone would pass a type error.
+
+### Checkpoint
+
+- `npm run typecheck`, `npm run build` and `php artisan test` (43 passed), on
+  the host under Node 22.
+- The built app, loaded in a frame against a fake `fetch` and a fake
+  `shopify.resourcePicker`: Customers (badges, filter, Next and Previous, the
+  403 Reconnect banner), Settings (a 422 under its field, save, add, delete,
+  and the status asked for again after each successful write only) and Price
+  preview (first product, picked product, cancel, picker error).
+
+**Not yet seen:** the app inside the real admin after this change, and the
+new CI step running on GitHub.

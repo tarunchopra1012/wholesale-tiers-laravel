@@ -54,7 +54,7 @@ cart.
 | ----------------- | ------------------------------- | ----------- |
 | Backend           | Laravel                         | 13.x        |
 | Language          | PHP                             | 8.4         |
-| Frontend          | React + Vite                    | 18.x        |
+| Frontend          | React + TypeScript + Vite       | 18.x        |
 | UI                | Shopify Polaris                 | latest      |
 | Embedding         | App Bridge (CDN script)         | latest      |
 | Database          | MySQL (local) · RDS MySQL (AWS) | 8.0 · 8.4   |
@@ -300,7 +300,7 @@ every pull request, and on every push to `main`:
 
 | Job                 | What it runs                                                        |
 | ------------------- | ------------------------------------------------------------------- |
-| `PHP suite`         | `php artisan test` on PHP 8.4, after building the frontend          |
+| `PHP suite`         | `php artisan test` on PHP 8.4, after type-checking and building the frontend |
 | `Function fixtures` | builds the Function with Shopify CLI, then `npx vitest run`         |
 
 Neither job needs a secret. The PHP suite uses in-memory SQLite and fakes
